@@ -1,0 +1,53 @@
+{
+  "storeTitle": "Emoji Market",
+  "searching": "Searching icons...",
+  "searchFailed": "Search failed: {{msg}}",
+  "sourceSearchFailed": "{{source}} search failed: {{msg}}",
+  "noResults": "No icons found for \"{{kw}}\"",
+  "downloadFailed": "Download failed ({{source}}): {{msg}}",
+
+  "author": "Author",
+  "license": "License",
+  "iconId": "Icon ID",
+  "keyword": "Keyword",
+  "source": "Source",
+  "favorites": "Favorites",
+  "collection": "Collection",
+  "tags": "Tags",
+  "commercial": "Commercial",
+  "commercialLink": "See here for commercial use",
+  "updatedAt": "Updated",
+
+  "keepOriginalColor": "Keep original color",
+  "importColor": "Import color",
+  "colorTip": "Only affects the imported SVG in SiYuan. The original data is not modified.",
+
+  "consent": "I have read the author and license information, confirm legal use, and accept all related risks.",
+  "confirm": "Use now",
+  "previewUnavailable": "Preview unavailable",
+  "learnMore": "Learn more about the license >>",
+  "licenseTitle": "License terms:",
+  "copyrightInfo": "Copyright info",
+
+  "unlabeled": "Unlabeled",
+  "unknownAuthor": "Unknown author",
+  "unnamed": "Unnamed icon",
+  "none": "None",
+
+  "tagFree": "Free",
+  "tagPaid": "Paid",
+  "tagOriginal": "Original",
+  "tagThirdParty": "Third-party (open source)",
+  "licenseOriginal": "Original",
+  "licenseOpenSource": "Third-party (open source)",
+
+  "usageCommercialNotice": "Please confirm you have obtained legal authorization before commercial use.",
+  "usagePluginDisclaimer": "This plugin only provides download and import capabilities, with no guarantee on licensing status.",
+
+  "errorNoSvg": "Icon has no SVG data",
+  "errorInvalidSvg": "Invalid SVG content",
+  "errorCreateDir": "Failed to create emoji directory",
+  "errorCreateDirFail": "Failed to create directory",
+  "errorWriteFile": "Failed to write file",
+  "importSuccess": "Icon imported successfully ({{path}}). Type the keyword again to use it."
+}

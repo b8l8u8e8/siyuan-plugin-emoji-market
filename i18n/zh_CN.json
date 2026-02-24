@@ -1,0 +1,53 @@
+{
+  "storeTitle": "表情市场",
+  "searching": "正在搜索图标...",
+  "searchFailed": "搜索失败：{{msg}}",
+  "sourceSearchFailed": "{{source}}搜索失败：{{msg}}",
+  "noResults": "没有找到与 \"{{kw}}\" 相关的图标",
+  "downloadFailed": "下载失败（{{source}}）：{{msg}}",
+
+  "author": "作者",
+  "license": "协议",
+  "iconId": "图标 ID",
+  "keyword": "关键词",
+  "source": "来源",
+  "favorites": "收藏",
+  "collection": "所属图标库",
+  "tags": "标签",
+  "commercial": "商用",
+  "commercialLink": "商用请移步这里",
+  "updatedAt": "更新日期",
+
+  "keepOriginalColor": "保留原始颜色",
+  "importColor": "导入颜色",
+  "colorTip": "仅影响本次导入到思源的 SVG，不会修改网站原始数据。",
+
+  "consent": "我已阅读作者与协议信息，确认合法使用，相关风险由我自行承担。",
+  "confirm": "立即使用",
+  "previewUnavailable": "预览不可用",
+  "learnMore": "了解更多协议详情 >>",
+  "licenseTitle": "使用许可：",
+  "copyrightInfo": "素材版权说明",
+
+  "unlabeled": "未标注",
+  "unknownAuthor": "未知作者",
+  "unnamed": "未命名图标",
+  "none": "无",
+
+  "tagFree": "免费使用",
+  "tagPaid": "付费使用",
+  "tagOriginal": "原创",
+  "tagThirdParty": "非原创（三方开源）",
+  "licenseOriginal": "原创",
+  "licenseOpenSource": "非原创（三方开源）",
+
+  "usageCommercialNotice": "商用前请确认你已获得图标素材的合法授权。",
+  "usagePluginDisclaimer": "插件仅提供下载与导入能力，不对素材授权状态做担保。",
+
+  "errorNoSvg": "图标没有 SVG 数据",
+  "errorInvalidSvg": "SVG 内容无效",
+  "errorCreateDir": "无法创建表情目录",
+  "errorCreateDirFail": "创建目录失败",
+  "errorWriteFile": "写入文件失败",
+  "importSuccess": "图标已导入成功（{{path}}），再次输入关键词即可使用。"
+}

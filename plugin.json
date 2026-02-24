@@ -1,0 +1,34 @@
+{
+  "name": "siyuan-plugin-emoji-market",
+  "author": "取舍",
+  "url": "",
+  "version": "0.1.0",
+  "minAppVersion": "2.9.0",
+  "disabledInPublish": false,
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
+  "displayName": {
+    "default": "Emoji Market",
+    "zh_CN": "表情市场"
+  },
+  "description": {
+    "default": "Emoji Market brings a massive icon library to SiYuan Notes, allowing you to search, replace document icons, or insert emojis directly from the emoji panel.",
+    "zh_CN": "表情市场为思源笔记提供海量图标，在表情面板中即可搜索替换文档图标或插入表情。"
+  },
+  "readme": {
+    "default": "README.md",
+    "zh_CN": "README_zh_CN.md"
+  },
+  "i18n": [
+    "en_US",
+    "zh_CN"
+  ],
+  "keywords": [
+    "图标",
+    "表情"
+  ]
+}
