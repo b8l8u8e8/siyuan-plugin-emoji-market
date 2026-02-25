@@ -50,5 +50,14 @@
   "errorCreateDir": "Failed to create emoji directory",
   "errorCreateDirFail": "Failed to create directory",
   "errorWriteFile": "Failed to write file",
-  "importSuccess": "Icon imported successfully ({{path}}). Type the keyword again to use it."
+  "importSuccess": "Icon imported successfully ({{path}}). Type the keyword again to use it.",
+
+  "settingsSourcesTitle": "Enabled markets",
+  "settingsSourcesDesc": "Choose markets and set per-source max results ({{min}}-{{max}}).",
+  "settingsMaxTitle": "Max results per source",
+  "settingsMaxDesc": "Range: {{min}}-{{max}}, default 30.",
+  "settingsLimitPrefix": "Limit",
+  "settingsLimitUnit": "items",
+  "settingsPerSourceLimit": "Max",
+  "settingsNoSourceEnabled": "No market selected. Please enable at least one source in plugin settings."
 }

@@ -1,6 +1,6 @@
 /* Emoji Market - SiYuan plugin (no-build single file) */
 
-const {Plugin, showMessage} = require("siyuan");
+const {Plugin, showMessage, Setting, Dialog} = require("siyuan");
 
 const SOURCES = [
   {
@@ -18,14 +18,17 @@ const SOURCES = [
 ];
 const SOURCE_MAP = Object.fromEntries(SOURCES.map((s) => [s.id, s]));
 
-const MAX_PER_SOURCE = 30;
+const STORAGE_SETTINGS = "settings";
+const DEFAULT_MAX_PER_SOURCE = 30;
+const MIN_MAX_PER_SOURCE = 1;
+const MAX_MAX_PER_SOURCE = 2000;
 const SEARCH_TTL = 2 * 60 * 1000;
 const DETAIL_TTL = 10 * 60 * 1000;
 const FALLBACK_COLOR = "#64748b";
 const SWATCHES = ["#64748b", "#111827", "#334155", "#2563eb", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#7c3aed", "#ec4899"];
 const ICONFONT_COPYRIGHT_TERMS_URL = "https://terms.alicdn.com/legal-agreement/terms/platform_service/20220704165734807/20220704165734807.html";
 
-/* ── Utility functions ── */
+/* 鈹€鈹€ Utility functions 鈹€鈹€ */
 
 function s(v, d = "") {
   return typeof v === "string" ? v : d;
@@ -106,11 +109,11 @@ function cleanTitleText(v) {
   return t.trim();
 }
 
-/* ── Plugin class ── */
+/* 鈹€鈹€ Plugin class 鈹€鈹€ */
 
 class EmojiMarketPlugin extends Plugin {
 
-  /* ── Lifecycle ── */
+  /* 鈹€鈹€ Lifecycle 鈹€鈹€ */
 
   onload() {
     this.observer = null;
@@ -119,11 +122,19 @@ class EmojiMarketPlugin extends Plugin {
     this.searchCache = new Map();
     this.detailCache = new Map();
     this.emojiBase = "";
+    this.settingsData = this.defaultSettings();
+    this.settingSourceInputs = new Map();
+    this.settingSourceMaxInputs = new Map();
+    this.settingSourceActionEls = new Map();
+    this.setting = null;
+    this.importDialog = null;
 
     this.dialogPromise = null;
     this.dialogResolve = null;
     this.dialogCleanup = null;
 
+    this.initSettingPanel();
+    void this.loadSettingsData().then(() => this.refreshEnhancedPanels());
     this.observePanels();
     void this.cleanupLegacyMetaFiles();
   }
@@ -142,6 +153,10 @@ class EmojiMarketPlugin extends Plugin {
     this.cleanupInjected();
     this.searchCache.clear();
     this.detailCache.clear();
+    this.setting = null;
+    this.settingSourceInputs.clear();
+    this.settingSourceMaxInputs.clear();
+    this.settingSourceActionEls.clear();
   }
 
   async uninstall() {
@@ -149,7 +164,7 @@ class EmojiMarketPlugin extends Plugin {
     // No plugin-specific storage to clean up.
   }
 
-  /* ── i18n ── */
+  /* 鈹€鈹€ i18n 鈹€鈹€ */
 
   t(key, params = {}) {
     const raw = (this.i18n && this.i18n[key]) || key;
@@ -159,7 +174,191 @@ class EmojiMarketPlugin extends Plugin {
     });
   }
 
-  /* ── Panel observation ── */
+  /* 鈹€鈹€ Settings 鈹€鈹€ */
+
+  defaultSettings() {
+    return {
+      enabledSources: Object.fromEntries(SOURCES.map((source) => [source.id, true])),
+      maxPerSourceBySource: Object.fromEntries(SOURCES.map((source) => [source.id, DEFAULT_MAX_PER_SOURCE])),
+    };
+  }
+
+  normalizeSettings(raw) {
+    const defaults = this.defaultSettings();
+    const data = raw && typeof raw === "object" ? raw : {};
+    const enabledRaw = data.enabledSources && typeof data.enabledSources === "object" ? data.enabledSources : {};
+    const maxRaw = data.maxPerSourceBySource && typeof data.maxPerSourceBySource === "object" ? data.maxPerSourceBySource : {};
+    const legacyMax = Object.prototype.hasOwnProperty.call(data, "maxPerSource") ? data.maxPerSource : undefined;
+
+    const enabledSources = {};
+    const maxPerSourceBySource = {};
+    SOURCES.forEach((source) => {
+      if (Object.prototype.hasOwnProperty.call(enabledRaw, source.id)) {
+        enabledSources[source.id] = !!enabledRaw[source.id];
+      } else {
+        enabledSources[source.id] = defaults.enabledSources[source.id];
+      }
+
+      const maxVal = Object.prototype.hasOwnProperty.call(maxRaw, source.id) ? maxRaw[source.id] : legacyMax;
+      maxPerSourceBySource[source.id] = this.normalizeMaxPerSource(maxVal);
+    });
+
+    return {
+      enabledSources,
+      maxPerSourceBySource,
+    };
+  }
+
+  normalizeMaxPerSource(v) {
+    const num = Number(v);
+    if (!Number.isFinite(num)) return DEFAULT_MAX_PER_SOURCE;
+    return Math.max(MIN_MAX_PER_SOURCE, Math.min(MAX_MAX_PER_SOURCE, Math.trunc(num)));
+  }
+
+  isSourceEnabled(sourceId) {
+    return !!this.settingsData?.enabledSources?.[sourceId];
+  }
+
+  getEnabledSources() {
+    return SOURCES.filter((source) => this.isSourceEnabled(source.id));
+  }
+
+  getMaxPerSource(sourceId = "") {
+    if (!sourceId) return DEFAULT_MAX_PER_SOURCE;
+    return this.normalizeMaxPerSource(this.settingsData?.maxPerSourceBySource?.[sourceId]);
+  }
+
+  async loadSettingsData() {
+    try {
+      const saved = await this.loadData(STORAGE_SETTINGS);
+      this.settingsData = this.normalizeSettings(saved);
+    } catch (err) {
+      this.settingsData = this.defaultSettings();
+      console.error("[emoji-market] load settings failed", err);
+    }
+    this.syncSettingUI();
+  }
+
+  async saveSettingsData() {
+    try {
+      await this.saveData(STORAGE_SETTINGS, this.settingsData);
+    } catch (err) {
+      console.error("[emoji-market] save settings failed", err);
+    }
+  }
+
+  syncSettingUI() {
+    if (this.settingSourceInputs instanceof Map) {
+      SOURCES.forEach((source) => {
+        const input = this.settingSourceInputs.get(source.id);
+        const maxInput = this.settingSourceMaxInputs.get(source.id);
+        const action = this.settingSourceActionEls.get(source.id);
+        const enabled = this.isSourceEnabled(source.id);
+        if (input instanceof HTMLInputElement) input.checked = enabled;
+        if (maxInput instanceof HTMLInputElement) {
+          maxInput.value = String(this.getMaxPerSource(source.id));
+          maxInput.disabled = !enabled;
+        }
+        if (action instanceof HTMLElement) action.classList.toggle("is-disabled", !enabled);
+      });
+    }
+  }
+
+  refreshEnhancedPanels() {
+    document.querySelectorAll(".emojis[data-if-market-enhanced]").forEach((root) => {
+      const st = this.panelStates.get(root);
+      if (!st || st.disposed) return;
+      this.scheduleSearch(st, 0);
+    });
+  }
+
+  initSettingPanel() {
+    this.settingSourceInputs.clear();
+    this.settingSourceMaxInputs.clear();
+    this.settingSourceActionEls.clear();
+    this.setting = new Setting({});
+    this.setting.addItem({
+      title: this.t("settingsSourcesTitle"),
+      description: this.t("settingsSourcesDesc", {min: MIN_MAX_PER_SOURCE, max: MAX_MAX_PER_SOURCE}),
+    });
+
+    SOURCES.forEach((source) => {
+      this.setting.addItem({
+        title: source.name,
+        description: "",
+        createActionElement: () => {
+          const action = document.createElement("div");
+          action.className = "if-market-setting-source-actions";
+
+          const toggle = document.createElement("label");
+          toggle.className = "if-market-setting-source-switch";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.className = "b3-switch fn__flex-center";
+          checkbox.checked = this.isSourceEnabled(source.id);
+
+          const limitWrap = document.createElement("label");
+          limitWrap.className = "if-market-setting-source-limit";
+          const limitLabel = document.createElement("span");
+          limitLabel.className = "if-market-setting-source-limit-label";
+          limitLabel.textContent = this.t("settingsLimitPrefix");
+
+          const maxInput = document.createElement("input");
+          maxInput.type = "number";
+          maxInput.min = String(MIN_MAX_PER_SOURCE);
+          maxInput.max = String(MAX_MAX_PER_SOURCE);
+          maxInput.step = "1";
+          maxInput.inputMode = "numeric";
+          maxInput.setAttribute("aria-label", `${source.name} ${this.t("settingsPerSourceLimit")}`);
+          maxInput.className = "b3-text-field if-market-setting-source-limit-input";
+          maxInput.value = String(this.getMaxPerSource(source.id));
+          maxInput.disabled = !checkbox.checked;
+
+          const limitUnit = document.createElement("span");
+          limitUnit.className = "if-market-setting-source-limit-unit";
+          limitUnit.textContent = this.t("settingsLimitUnit");
+
+          const applySourceMax = () => {
+            const next = this.normalizeMaxPerSource(maxInput.value);
+            maxInput.value = String(next);
+            if (next === this.getMaxPerSource(source.id)) return;
+            this.settingsData.maxPerSourceBySource[source.id] = next;
+            this.searchCache.clear();
+            void this.saveSettingsData();
+            this.refreshEnhancedPanels();
+          };
+          maxInput.addEventListener("change", applySourceMax);
+          maxInput.addEventListener("blur", applySourceMax);
+
+          checkbox.addEventListener("change", () => {
+            const enabled = !!checkbox.checked;
+            this.settingsData.enabledSources[source.id] = enabled;
+            maxInput.disabled = !enabled;
+            action.classList.toggle("is-disabled", !enabled);
+            void this.saveSettingsData();
+            this.refreshEnhancedPanels();
+          });
+
+          toggle.appendChild(checkbox);
+          limitWrap.appendChild(limitLabel);
+          limitWrap.appendChild(maxInput);
+          limitWrap.appendChild(limitUnit);
+          action.appendChild(toggle);
+          action.appendChild(limitWrap);
+          action.classList.toggle("is-disabled", !checkbox.checked);
+
+          this.settingSourceInputs.set(source.id, checkbox);
+          this.settingSourceMaxInputs.set(source.id, maxInput);
+          this.settingSourceActionEls.set(source.id, action);
+          return action;
+        },
+      });
+    });
+
+    this.syncSettingUI();
+  }
+
+  /* 鈹€鈹€ Panel observation 鈹€鈹€ */
 
   observePanels() {
     this.enhanceAll();
@@ -244,7 +443,7 @@ class EmojiMarketPlugin extends Plugin {
     if (input.value.trim()) this.scheduleSearch(st, 0);
   }
 
-  /* ── Hint panel (inline :xxx popup) ── */
+  /* 鈹€鈹€ Hint panel (inline :xxx popup) 鈹€鈹€ */
 
   enhanceHintPanel(root) {
     if (!(root instanceof HTMLElement)) return;
@@ -316,7 +515,7 @@ class EmojiMarketPlugin extends Plugin {
     if (host instanceof HTMLElement) host.classList.remove("fn__none");
   }
 
-  /* ── Search scheduling ── */
+  /* 鈹€鈹€ Search scheduling 鈹€鈹€ */
 
   scheduleSearch(st, delay = 280) {
     if (!st || st.disposed) return;
@@ -378,7 +577,7 @@ class EmojiMarketPlugin extends Plugin {
     }
   }
 
-  /* ── Search & render ── */
+  /* 鈹€鈹€ Search & render 鈹€鈹€ */
 
   async searchAndRender(st, reqKw) {
     if (!st || st.disposed) return;
@@ -401,9 +600,17 @@ class EmojiMarketPlugin extends Plugin {
     const seq = st.seq;
 
     try {
-      const bySource = await this.searchAllSources(kw);
+      const enabledSources = this.getEnabledSources();
+      if (!enabledSources.length) {
+        c.classList.remove("if-market-loading");
+        c.innerHTML = `<div class="if-market-empty">${this.escapeHtml(this.t("settingsNoSourceEnabled"))}</div>`;
+        this.showHintContainer(st);
+        return;
+      }
+
+      const bySource = await this.searchAllSources(kw, enabledSources);
       if (st.disposed || st.seq !== seq) return;
-      this.renderResults(st, kw, bySource);
+      this.renderResults(st, kw, enabledSources, bySource);
       this.showHintContainer(st);
     } catch (err) {
       if (st.disposed || st.seq !== seq) return;
@@ -413,14 +620,14 @@ class EmojiMarketPlugin extends Plugin {
     }
   }
 
-  renderResults(st, kw, bySource) {
+  renderResults(st, kw, sources, bySource) {
     const c = this.ensureSection(st);
     this._mutating = true;
     try {
       c.classList.remove("if-market-loading");
       c.innerHTML = "";
       const frag = document.createDocumentFragment();
-      SOURCES.forEach((source) => {
+      sources.forEach((source) => {
         frag.appendChild(this.renderSourceBlock(source, kw, bySource[source.id] || {items: [], error: null}));
       });
       c.appendChild(frag);
@@ -447,7 +654,7 @@ class EmojiMarketPlugin extends Plugin {
       return block;
     }
 
-    const items = Array.isArray(res.items) ? res.items.slice(0, MAX_PER_SOURCE) : [];
+    const items = Array.isArray(res.items) ? res.items.slice(0, this.getMaxPerSource(source.id)) : [];
     if (!items.length) {
       body.innerHTML = `<div class="if-market-empty">${this.escapeHtml(this.t("noResults", {kw}))}</div>`;
       return block;
@@ -461,7 +668,7 @@ class EmojiMarketPlugin extends Plugin {
     return block;
   }
 
-  /* ── Result buttons (FIX #1: no emojis__item class initially) ── */
+  /* 鈹€鈹€ Result buttons (FIX #1: no emojis__item class initially) 鈹€鈹€ */
 
   createResultButton(source, icon, kw) {
     const btn = document.createElement("button");
@@ -492,7 +699,7 @@ class EmojiMarketPlugin extends Plugin {
     return btn;
   }
 
-  /* ── Pick & import (FIX #3: auto-select after import) ── */
+  /* 鈹€鈹€ Pick & import (FIX #3: auto-select after import) 鈹€鈹€ */
 
   async onPick(btn, source, icon) {
     if (btn.dataset.ifSaving === "1") return;
@@ -523,17 +730,18 @@ class EmojiMarketPlugin extends Plugin {
     }
   }
 
-  /* ── Multi-source search ── */
+  /* 鈹€鈹€ Multi-source search 鈹€鈹€ */
 
-  async searchAllSources(keyword) {
-    const jobs = SOURCES.map((source) => {
+  async searchAllSources(keyword, sources = null) {
+    const sourceList = Array.isArray(sources) ? sources : this.getEnabledSources();
+    const jobs = sourceList.map((source) => {
       if (source.id === "iconfont") return this.searchIconfont(keyword);
       return this.searchCainiao(keyword);
     });
 
     const settled = await Promise.allSettled(jobs);
     const out = {};
-    SOURCES.forEach((source, idx) => {
+    sourceList.forEach((source, idx) => {
       const x = settled[idx];
       out[source.id] = x.status === "fulfilled" ? {items: x.value || [], error: null} : {items: [], error: x.reason};
     });
@@ -549,7 +757,7 @@ class EmojiMarketPlugin extends Plugin {
     const params = new URLSearchParams();
     params.set("q", keyword);
     params.set("page", "1");
-    params.set("count", String(MAX_PER_SOURCE * 2));
+    params.set("count", String(this.getMaxPerSource("iconfont") * 2));
     params.set("sortType", "updated_at");
     params.set("fromCollection", "1");
 
@@ -681,7 +889,7 @@ class EmojiMarketPlugin extends Plugin {
     return items;
   }
 
-  /* ── Detail fetching ── */
+  /* 鈹€鈹€ Detail fetching 鈹€鈹€ */
 
   async getDetail(source, icon) {
     const key = `d:${source.id}:${n(icon?.id) || n(icon?.detailUrl)}`;
@@ -802,7 +1010,7 @@ class EmojiMarketPlugin extends Plugin {
       Array.from(usageContainer.querySelectorAll("p.mt-1.text-gray-400")).forEach((p) => {
         const line = n(p.textContent);
         if (!line) return;
-        if (/^大小[:：]|^宽度[:：]|^颜色[:：]/.test(line)) return;
+        if (/^(大小|宽度|颜色)[:：]/.test(line)) return;
         usageLines.push(line);
       });
 
@@ -816,8 +1024,8 @@ class EmojiMarketPlugin extends Plugin {
       root.querySelectorAll("p,li").forEach((node) => {
         const line = n(node.textContent);
         if (!line) return;
-        if (/^大小[:：]|^宽度[:：]|^颜色[:：]/.test(line)) return;
-        if (/商用使用范围|修改与衍生|归属权申明|使用许可/.test(line)) {
+        if (/^(大小|宽度|颜色)[:：]/.test(line)) return;
+        if (/(商用使用范围|修改与衍生|归属权|使用许可)/.test(line)) {
           usageLines.push(line);
         }
       });
@@ -866,7 +1074,7 @@ class EmojiMarketPlugin extends Plugin {
 
   extractUsage(raw) {
     if (Array.isArray(raw)) return raw.map((x) => n(x)).filter(Boolean);
-    return String(raw || "").split(/[\r\n;；]+/).map((x) => n(x)).filter(Boolean);
+    return String(raw || "").split(/[\r\n;,，]+/).map((x) => n(x)).filter(Boolean);
   }
 
   extractColors(...texts) {
@@ -907,7 +1115,7 @@ class EmojiMarketPlugin extends Plugin {
     return out.slice(0, 16);
   }
 
-  /* ── Import dialog (FIX #2: avatar with referrerpolicy + error fallback) ── */
+  /* 鈹€鈹€ Import dialog (FIX #2: avatar with referrerpolicy + error fallback) 鈹€鈹€ */
 
   showImportDialog(source, icon, detail, keyword) {
     if (this.dialogPromise) return this.dialogPromise;
@@ -993,8 +1201,7 @@ class EmojiMarketPlugin extends Plugin {
 
     const html = isIconfont
       ? `
-      <div class="if-market-consent-dialog if-market-dialog--iconfont" role="dialog" aria-modal="true">
-        <div class="if-market-drag-handle" data-role="drag-handle" aria-label="drag"></div>
+      <div class="if-market-consent-panel if-market-dialog--iconfont" role="dialog" aria-modal="true">
         <div class="if-market-consent-body">
           <div class="if-iconfont-head">
             <div class="if-iconfont-headline">
@@ -1038,7 +1245,6 @@ class EmojiMarketPlugin extends Plugin {
               </div>
             </div>
           </div>
-
         </div>
         <div class="if-market-consent-footer">
           <label class="if-market-consent-check">
@@ -1052,8 +1258,7 @@ class EmojiMarketPlugin extends Plugin {
       </div>
       `
       : `
-      <div class="if-market-consent-dialog if-market-dialog--compact" role="dialog" aria-modal="true">
-        <div class="if-market-drag-handle" data-role="drag-handle" aria-label="drag"></div>
+      <div class="if-market-consent-panel if-market-dialog--compact" role="dialog" aria-modal="true">
         <div class="if-market-consent-body">
           <div class="if-market-headline">
             <h2 class="if-market-name">${iconName}</h2>
@@ -1091,7 +1296,6 @@ class EmojiMarketPlugin extends Plugin {
               ` : ""}
             </div>
           </div>
-
         </div>
         <div class="if-market-consent-footer">
           <label class="if-market-consent-check">
@@ -1107,14 +1311,50 @@ class EmojiMarketPlugin extends Plugin {
 
     this.dialogPromise = new Promise((resolve) => {
       this.dialogResolve = resolve;
+      let done = false;
+      let consentWarnTimer = 0;
+      let dialog = null;
 
-      const mask = document.createElement("div");
-      mask.className = "if-market-consent-mask";
-      mask.innerHTML = html;
-      document.body.appendChild(mask);
+      const cleanup = () => {
+        if (consentWarnTimer) {
+          clearTimeout(consentWarnTimer);
+          consentWarnTimer = 0;
+        }
+        if (this.dialogCleanup === cleanup) this.dialogCleanup = null;
+      };
+      this.dialogCleanup = cleanup;
 
-      /* FIX #2: avatar error fallback — retry via Node.js fetch */
-      const avatarImg = mask.querySelector("img.if-iconfont-avatar");
+      const settle = (payload) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        const r = this.dialogResolve;
+        this.dialogResolve = null;
+        this.dialogPromise = null;
+        if (r) r(payload);
+      };
+
+      dialog = new Dialog({
+        title: `${this.t("storeTitle")} - ${source.name}`,
+        content: html,
+        width: this.isMobile ? "96vw" : "920px",
+        height: this.isMobile ? "92vh" : "78vh",
+        containerClassName: "if-market-import-container",
+        destroyCallback: () => {
+          if (this.importDialog === dialog) this.importDialog = null;
+          settle({confirmed: false, keepOriginalColor: true, selectedColor: ""});
+        },
+      });
+      this.importDialog = dialog;
+
+      const root = dialog.element?.querySelector?.(".if-market-consent-panel");
+      if (!(root instanceof HTMLElement)) {
+        settle({confirmed: false, keepOriginalColor: true, selectedColor: ""});
+        dialog.destroy();
+        return;
+      }
+
+      const avatarImg = root.querySelector("img.if-iconfont-avatar");
       if (avatarImg) {
         const origAvatarUrl = avatarUrl;
         avatarImg.addEventListener("error", () => {
@@ -1137,20 +1377,13 @@ class EmojiMarketPlugin extends Plugin {
         });
       }
 
-      let done = false;
-
-      const agree = mask.querySelector('[data-role="agree"]');
-      const keep = mask.querySelector('[data-role="keep-original"]');
-      const color = mask.querySelector('[data-role="color-picker"]');
-      const sw = mask.querySelector('[data-role="swatches"]');
-      const ok = mask.querySelector('[data-role="confirm"]');
-      const host = mask.querySelector('[data-role="preview"]');
-      const dialog = mask.querySelector(".if-market-consent-dialog");
-      const dragHandle = mask.querySelector('[data-role="drag-handle"]');
-      const consentCheck = mask.querySelector(".if-market-consent-check");
-      const disposeDrag = this.bindDialogDrag(dialog, dragHandle);
-      let consentWarnTimer = 0;
-
+      const agree = root.querySelector('[data-role="agree"]');
+      const keep = root.querySelector('[data-role="keep-original"]');
+      const color = root.querySelector('[data-role="color-picker"]');
+      const sw = root.querySelector('[data-role="swatches"]');
+      const ok = root.querySelector('[data-role="confirm"]');
+      const host = root.querySelector('[data-role="preview"]');
+      const consentCheck = root.querySelector(".if-market-consent-check");
       const baseSvg = s(detail?.svg || icon?.previewSvg);
 
       const syncSwatch = () => {
@@ -1196,40 +1429,6 @@ class EmojiMarketPlugin extends Plugin {
         syncSwatch();
       };
 
-      const finalize = (confirmed) => {
-        if (done) return;
-        done = true;
-
-        this.removeDialog();
-
-        const r = this.dialogResolve;
-        this.dialogResolve = null;
-        this.dialogPromise = null;
-
-        if (r) {
-          const keepOriginal = !!keep?.checked;
-          r({
-            confirmed: !!confirmed,
-            keepOriginalColor: keepOriginal,
-            selectedColor: keepOriginal ? "" : s(color?.value, FALLBACK_COLOR),
-          });
-        }
-      };
-
-      const onEsc = (e) => {
-        if (e.key === "Escape") finalize(false);
-      };
-
-      this.dialogCleanup = () => {
-        document.removeEventListener("keydown", onEsc, true);
-        disposeDrag();
-        if (consentWarnTimer) {
-          clearTimeout(consentWarnTimer);
-          consentWarnTimer = 0;
-        }
-        if (mask.parentElement) mask.remove();
-      };
-
       const notifyConsentRequired = () => {
         const msg = this.t("consentRequired");
         if (typeof showMessage === "function") showMessage(msg, 2500);
@@ -1241,14 +1440,23 @@ class EmojiMarketPlugin extends Plugin {
           consentCheck.classList.add("if-market-consent-check--warn");
           if (consentWarnTimer) clearTimeout(consentWarnTimer);
           consentWarnTimer = window.setTimeout(() => {
-            if (consentCheck instanceof HTMLElement) {
-              consentCheck.classList.remove("if-market-consent-check--warn");
-            }
+            if (consentCheck instanceof HTMLElement) consentCheck.classList.remove("if-market-consent-check--warn");
             consentWarnTimer = 0;
           }, 900);
         }
 
         if (agree instanceof HTMLElement) agree.focus();
+      };
+
+      const finalize = (confirmed) => {
+        const keepOriginal = !!keep?.checked;
+        settle({
+          confirmed: !!confirmed,
+          keepOriginalColor: keepOriginal,
+          selectedColor: keepOriginal ? "" : s(color?.value, FALLBACK_COLOR),
+        });
+        if (this.importDialog === dialog) this.importDialog = null;
+        dialog.destroy();
       };
 
       agree?.addEventListener("change", () => {
@@ -1284,121 +1492,30 @@ class EmojiMarketPlugin extends Plugin {
         }
         finalize(true);
       });
-      mask.addEventListener("click", (e) => {
-        if (e.target === mask) finalize(false);
-      });
-      document.addEventListener("keydown", onEsc, true);
 
       render();
     });
 
     return this.dialogPromise;
   }
-
-  /* ── Dialog drag ── */
-
-  bindDialogDrag(dialog, handle) {
-    if (!(dialog instanceof HTMLElement) || !(handle instanceof HTMLElement)) return () => {};
-
-    let dragging = false;
-    let pointerId = -1;
-    let startX = 0;
-    let startY = 0;
-    let startLeft = 0;
-    let startTop = 0;
-
-    const stopDragging = () => {
-      if (!dragging) return;
-      dragging = false;
-      dialog.classList.remove("if-market-dialog--dragging");
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onUp, true);
-      window.removeEventListener("pointercancel", onUp, true);
-      if (pointerId >= 0) {
-        try {
-          handle.releasePointerCapture(pointerId);
-        } catch {
-          // ignore
-        }
-      }
-      pointerId = -1;
-    };
-
-    const onMove = (e) => {
-      if (!dragging) return;
-
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      const rect = dialog.getBoundingClientRect();
-
-      const minLeft = 6;
-      const minTop = 6;
-      const maxLeft = Math.max(minLeft, window.innerWidth - rect.width - 6);
-      const maxTop = Math.max(minTop, window.innerHeight - rect.height - 6);
-
-      const left = Math.min(maxLeft, Math.max(minLeft, startLeft + dx));
-      const top = Math.min(maxTop, Math.max(minTop, startTop + dy));
-
-      dialog.style.left = `${left}px`;
-      dialog.style.top = `${top}px`;
-      e.preventDefault();
-    };
-
-    const onUp = () => {
-      stopDragging();
-    };
-
-    const onDown = (e) => {
-      if (e.button !== 0) return;
-      if (!(dialog instanceof HTMLElement)) return;
-
-      dragging = true;
-      pointerId = typeof e.pointerId === "number" ? e.pointerId : -1;
-
-      const rect = dialog.getBoundingClientRect();
-      startX = e.clientX;
-      startY = e.clientY;
-      startLeft = rect.left;
-      startTop = rect.top;
-
-      dialog.style.position = "fixed";
-      dialog.style.left = `${rect.left}px`;
-      dialog.style.top = `${rect.top}px`;
-      dialog.style.margin = "0";
-      dialog.style.transform = "none";
-      dialog.classList.add("if-market-dialog--dragging");
-
-      if (pointerId >= 0) {
-        try {
-          handle.setPointerCapture(pointerId);
-        } catch {
-          // ignore
-        }
-      }
-
-      window.addEventListener("pointermove", onMove, true);
-      window.addEventListener("pointerup", onUp, true);
-      window.addEventListener("pointercancel", onUp, true);
-      e.preventDefault();
-    };
-
-    handle.addEventListener("pointerdown", onDown);
-
-    return () => {
-      stopDragging();
-      handle.removeEventListener("pointerdown", onDown);
-    };
-  }
-
   removeDialog() {
     if (typeof this.dialogCleanup === "function") {
       this.dialogCleanup();
       this.dialogCleanup = null;
     }
+    const dlg = this.importDialog;
+    this.importDialog = null;
+    if (dlg && typeof dlg.destroy === "function") {
+      try {
+        dlg.destroy();
+      } catch {
+        // ignore
+      }
+    }
     document.querySelectorAll(".if-market-consent-mask").forEach((el) => el.remove());
   }
 
-  /* ── SVG color application ── */
+  /* 鈹€鈹€ SVG color application 鈹€鈹€ */
 
   isReplacableColor(val) {
     const v = s(val).trim().toLowerCase();
@@ -1467,7 +1584,7 @@ class EmojiMarketPlugin extends Plugin {
     }
   }
 
-  /* ── Emoji insertion ── */
+  /* 鈹€鈹€ Emoji insertion 鈹€鈹€ */
 
   triggerNativeSelection(btn) {
     if (!(btn instanceof HTMLElement) || !btn.isConnected) return false;
@@ -1609,7 +1726,7 @@ class EmojiMarketPlugin extends Plugin {
     return false;
   }
 
-  /* ── File operations ── */
+  /* 鈹€鈹€ File operations 鈹€鈹€ */
 
   async saveToEmojiStore(source, icon, detail, context = {}) {
     let raw = s(detail?.svg).trim();
@@ -1796,7 +1913,7 @@ class EmojiMarketPlugin extends Plugin {
     return {ok: resp.ok, status: resp.status, json};
   }
 
-  /* ── Network requests ── */
+  /* 鈹€鈹€ Network requests 鈹€鈹€ */
 
   async fetchAvatarDataUrl(url) {
     const errors = [];
@@ -2111,7 +2228,7 @@ class EmojiMarketPlugin extends Plugin {
     });
   }
 
-  /* ── DOM helpers ── */
+  /* 鈹€鈹€ DOM helpers 鈹€鈹€ */
 
   safeSvgElement(raw) {
     const text = this.sanitizeSvg(raw);
@@ -2138,3 +2255,4 @@ class EmojiMarketPlugin extends Plugin {
 }
 
 module.exports = EmojiMarketPlugin;
+

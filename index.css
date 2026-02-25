@@ -1,4 +1,4 @@
-/* ── Search result area ── */
+/* 鈹€鈹€ Search result area 鈹€鈹€ */
 
 .if-market-content {
   align-content: flex-start;
@@ -31,7 +31,7 @@
   flex-wrap: wrap;
 }
 
-/* ── Icon buttons — mirrors base.css .emojis__item exactly ── */
+/* 鈹€鈹€ Icon buttons 鈥?mirrors base.css .emojis__item exactly 鈹€鈹€ */
 
 .if-market-item {
   display: inline-flex;
@@ -70,7 +70,7 @@
   pointer-events: none;
 }
 
-/* ── Empty / loading states ── */
+/* 鈹€鈹€ Empty / loading states 鈹€鈹€ */
 
 .if-market-empty,
 .if-market-searching {
@@ -84,64 +84,97 @@
   min-height: 32px;
 }
 
-/* ── Dialog overlay mask ── */
+/* 鈹€鈹€ Plugin settings rows 鈹€鈹€ */
 
-.if-market-consent-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483000;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
+.if-market-setting-source-actions {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 12px;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 230px;
+  transition: var(--b3-transition);
 }
 
-/* ── Dialog container ── */
+.if-market-setting-source-actions.is-disabled {
+  opacity: 0.65;
+}
 
-.if-market-consent-dialog {
-  width: min(920px, 92vw);
-  max-height: min(78vh, 700px);
+.if-market-setting-source-switch {
+  display: inline-flex;
+  align-items: center;
+}
+
+.if-market-setting-source-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.if-market-setting-source-limit-label,
+.if-market-setting-source-limit-unit {
+  font-size: 12px;
+  color: var(--b3-theme-on-surface-light);
+}
+
+.if-market-setting-source-limit-input {
+  width: 60px;
+  min-width: 60px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  line-height: 26px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.if-market-setting-source-limit-input::-webkit-outer-spin-button,
+.if-market-setting-source-limit-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .if-market-setting-source-actions {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .if-market-setting-source-limit {
+    gap: 4px;
+  }
+
+  .if-market-setting-source-limit-label,
+  .if-market-setting-source-limit-unit {
+    font-size: 11px;
+  }
+
+  .if-market-setting-source-limit-input {
+    width: 56px;
+    min-width: 56px;
+  }
+}
+.if-market-import-container .b3-dialog__body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.if-market-consent-panel {
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--b3-theme-surface);
   color: var(--b3-theme-on-surface);
-  border: 1px solid var(--b3-border-color);
-  border-radius: 12px;
-  box-shadow: var(--b3-dialog-shadow, 0 8px 32px rgba(0, 0, 0, 0.18));
   font-size: 13px;
   line-height: 1.5;
 }
 
-/* ── Drag handle ── */
-
-.if-market-drag-handle {
-  height: 20px;
-  flex: 0 0 auto;
-  cursor: move;
-  position: relative;
-}
-
-.if-market-drag-handle::before {
-  content: "";
-  width: 40px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--b3-border-color);
-  position: absolute;
-  left: 50%;
-  top: 8px;
-  transform: translateX(-50%);
-  opacity: 0.7;
-}
-
-.if-market-dialog--dragging {
-  cursor: move;
-  user-select: none;
-}
-
-/* ── Dialog body ── */
+/* 鈹€鈹€ Dialog body 鈹€鈹€ */
 
 .if-market-consent-body {
   padding: 4px 16px 12px;
@@ -152,7 +185,7 @@
   overflow: auto;
 }
 
-/* ── Headline (Cainiao) ── */
+/* 鈹€鈹€ Headline (Cainiao) 鈹€鈹€ */
 
 .if-market-headline {
   display: flex;
@@ -174,7 +207,7 @@
   color: var(--b3-theme-on-surface-light);
 }
 
-/* ── Links ── */
+/* 鈹€鈹€ Links 鈹€鈹€ */
 
 .if-market-head-meta a,
 .if-market-meta-lines a,
@@ -193,7 +226,7 @@
   text-decoration: underline;
 }
 
-/* ── Main layout (two-column) ── */
+/* 鈹€鈹€ Main layout (two-column) 鈹€鈹€ */
 
 .if-market-main {
   display: grid;
@@ -206,7 +239,7 @@
   grid-template-columns: minmax(300px, 1.1fr) minmax(260px, 0.9fr);
 }
 
-/* ── Preview area ── */
+/* 鈹€鈹€ Preview area 鈹€鈹€ */
 
 .if-market-preview {
   min-height: 260px;
@@ -233,7 +266,7 @@
   position: static !important;
 }
 
-/* ── Side panel ── */
+/* 鈹€鈹€ Side panel 鈹€鈹€ */
 
 .if-market-side {
   display: flex;
@@ -252,7 +285,7 @@
   margin: 0 0 4px;
 }
 
-/* ── Cards (info, color, license) ── */
+/* 鈹€鈹€ Cards (info, color, license) 鈹€鈹€ */
 
 .if-market-color-wrap,
 .if-market-license-box,
@@ -262,7 +295,7 @@
   padding: 10px 12px;
 }
 
-/* ── Color picker ── */
+/* 鈹€鈹€ Color picker 鈹€鈹€ */
 
 .if-market-color-keep,
 .if-market-color-input {
@@ -318,7 +351,7 @@
   line-height: 1.5;
 }
 
-/* ── License box ── */
+/* 鈹€鈹€ License box 鈹€鈹€ */
 
 .if-market-license-title {
   font-weight: 600;
@@ -345,7 +378,7 @@
   background: var(--b3-theme-surface);
 }
 
-/* ── Consent checkbox ── */
+/* 鈹€鈹€ Consent checkbox 鈹€鈹€ */
 
 .if-market-consent-check {
   display: flex;
@@ -372,7 +405,7 @@
   line-height: 1.5;
 }
 
-/* ── Actions bar ── */
+/* 鈹€鈹€ Actions bar 鈹€鈹€ */
 
 .if-market-consent-actions {
   display: flex;
@@ -382,7 +415,7 @@
   flex: 0 0 auto;
 }
 
-/* ── Confirm button styling ── */
+/* 鈹€鈹€ Confirm button styling 鈹€鈹€ */
 
 .if-market-confirm-btn {
   font-size: 13px;
@@ -406,7 +439,7 @@
   cursor: not-allowed;
 }
 
-/* ── Iconfont head ── */
+/* 鈹€鈹€ Iconfont head 鈹€鈹€ */
 
 .if-iconfont-head {
   margin-bottom: 10px;
@@ -438,7 +471,7 @@
   font-weight: 700;
 }
 
-/* ── Author row ── */
+/* 鈹€鈹€ Author row 鈹€鈹€ */
 
 .if-iconfont-author-row {
   display: flex;
@@ -473,14 +506,14 @@
   color: var(--b3-theme-on-surface-light);
 }
 
-/* ── Info card ── */
+/* 鈹€鈹€ Info card 鈹€鈹€ */
 
 .if-iconfont-info-card {
   font-size: 12px;
   line-height: 1.6;
 }
 
-/* ── Tags ── */
+/* 鈹€鈹€ Tags 鈹€鈹€ */
 
 .if-iconfont-tags {
   display: flex;
@@ -502,14 +535,9 @@
   font-size: 11px;
 }
 
-/* ── Responsive ── */
+/* 鈹€鈹€ Responsive 鈹€鈹€ */
 
 @media (max-width: 900px) {
-  .if-market-consent-dialog {
-    width: min(96vw, 720px);
-    max-height: 88vh;
-  }
-
   .if-market-main,
   .if-market-main--iconfont {
     grid-template-columns: 1fr;
@@ -534,12 +562,6 @@
 }
 
 @media (max-width: 520px) {
-  .if-market-consent-dialog {
-    width: 98vw;
-    max-height: 92vh;
-    border-radius: 8px;
-  }
-
   .if-market-preview,
   .if-market-preview--iconfont {
     min-height: 180px;
@@ -550,3 +572,4 @@
     font-size: 16px;
   }
 }
+

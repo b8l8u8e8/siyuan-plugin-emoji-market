@@ -50,5 +50,14 @@
   "errorCreateDir": "无法创建表情目录",
   "errorCreateDirFail": "创建目录失败",
   "errorWriteFile": "写入文件失败",
-  "importSuccess": "图标已导入成功（{{path}}），再次输入关键词即可使用。"
+  "importSuccess": "图标已导入成功（{{path}}），再次输入关键词即可使用。",
+
+  "settingsSourcesTitle": "启用市场",
+  "settingsSourcesDesc": "选择要启用的市场，并设置每个市场的最大显示数量（{{min}}-{{max}}）。",
+  "settingsMaxTitle": "单源最多显示数量",
+  "settingsMaxDesc": "取值范围：{{min}}-{{max}}，默认 30。",
+  "settingsLimitPrefix": "上限",
+  "settingsLimitUnit": "条",
+  "settingsPerSourceLimit": "最多",
+  "settingsNoSourceEnabled": "当前未启用任何市场，请在插件设置中至少启用一个来源。"
 }
