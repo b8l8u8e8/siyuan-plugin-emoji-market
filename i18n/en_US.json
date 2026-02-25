@@ -23,6 +23,7 @@
   "colorTip": "Only affects the imported SVG in SiYuan. The original data is not modified.",
 
   "consent": "I have read the author and license information, confirm legal use, and accept all related risks.",
+  "consentRequired": "Please check the consent confirmation first.",
   "confirm": "Use now",
   "previewUnavailable": "Preview unavailable",
   "learnMore": "Learn more about the license >>",

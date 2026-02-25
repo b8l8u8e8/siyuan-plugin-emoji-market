@@ -1,8 +1,8 @@
 {
   "name": "siyuan-plugin-emoji-market",
   "author": "取舍",
-  "url": "",
-  "version": "0.1.0",
+  "url": "https://github.com/b8l8u8e8/siyuan-plugin-emoji-market",
+  "version": "0.1.1",
   "minAppVersion": "2.9.0",
   "disabledInPublish": true,
   "backends": [
@@ -23,10 +23,6 @@
     "default": "README.md",
     "zh_CN": "README_zh_CN.md"
   },
-  "i18n": [
-    "en_US",
-    "zh_CN"
-  ],
   "keywords": [
     "图标",
     "表情"

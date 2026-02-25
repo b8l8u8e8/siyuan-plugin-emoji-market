@@ -23,6 +23,7 @@
   "colorTip": "仅影响本次导入到思源的 SVG，不会修改网站原始数据。",
 
   "consent": "我已阅读作者与协议信息，确认合法使用，相关风险由我自行承担。",
+  "consentRequired": "请先勾选同意确认。",
   "confirm": "立即使用",
   "previewUnavailable": "预览不可用",
   "learnMore": "了解更多协议详情 >>",

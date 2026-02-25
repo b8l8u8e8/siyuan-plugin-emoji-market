@@ -87,10 +87,6 @@ function hasHeader(h, name) {
   const k = String(name || "").toLowerCase();
   return Object.keys(h || {}).some((x) => x.toLowerCase() === k);
 }
-function existsLike(msg) {
-  const t = String(msg || "").toLowerCase();
-  return t.includes("exist") || t.includes("already") || t.includes("已存在");
-}
 function fmtDate(v) {
   const t = s(v).trim();
   if (!t) return "";
@@ -1044,13 +1040,15 @@ class EmojiMarketPlugin extends Plugin {
             </div>
           </div>
 
+        </div>
+        <div class="if-market-consent-footer">
           <label class="if-market-consent-check">
             <input type="checkbox" data-role="agree" />
             <span>${this.escapeHtml(this.t("consent"))}</span>
           </label>
-        </div>
-        <div class="if-market-consent-actions">
-          <button type="button" class="b3-button b3-button--text if-market-confirm-btn" data-role="confirm" disabled>${this.escapeHtml(this.t("confirm"))}</button>
+          <div class="if-market-consent-actions">
+            <button type="button" class="b3-button b3-button--text if-market-confirm-btn" data-role="confirm">${this.escapeHtml(this.t("confirm"))}</button>
+          </div>
         </div>
       </div>
       `
@@ -1095,13 +1093,15 @@ class EmojiMarketPlugin extends Plugin {
             </div>
           </div>
 
+        </div>
+        <div class="if-market-consent-footer">
           <label class="if-market-consent-check">
             <input type="checkbox" data-role="agree" />
             <span>${this.escapeHtml(this.t("consent"))}</span>
           </label>
-        </div>
-        <div class="if-market-consent-actions">
-          <button type="button" class="b3-button b3-button--text if-market-confirm-btn" data-role="confirm" disabled>${this.escapeHtml(this.t("confirm"))}</button>
+          <div class="if-market-consent-actions">
+            <button type="button" class="b3-button b3-button--text if-market-confirm-btn" data-role="confirm">${this.escapeHtml(this.t("confirm"))}</button>
+          </div>
         </div>
       </div>
       `;
@@ -1148,7 +1148,9 @@ class EmojiMarketPlugin extends Plugin {
       const host = mask.querySelector('[data-role="preview"]');
       const dialog = mask.querySelector(".if-market-consent-dialog");
       const dragHandle = mask.querySelector('[data-role="drag-handle"]');
+      const consentCheck = mask.querySelector(".if-market-consent-check");
       const disposeDrag = this.bindDialogDrag(dialog, dragHandle);
+      let consentWarnTimer = 0;
 
       const baseSvg = s(detail?.svg || icon?.previewSvg);
 
@@ -1222,11 +1224,38 @@ class EmojiMarketPlugin extends Plugin {
       this.dialogCleanup = () => {
         document.removeEventListener("keydown", onEsc, true);
         disposeDrag();
+        if (consentWarnTimer) {
+          clearTimeout(consentWarnTimer);
+          consentWarnTimer = 0;
+        }
         if (mask.parentElement) mask.remove();
       };
 
+      const notifyConsentRequired = () => {
+        const msg = this.t("consentRequired");
+        if (typeof showMessage === "function") showMessage(msg, 2500);
+        else console.warn(msg);
+
+        if (consentCheck instanceof HTMLElement) {
+          consentCheck.classList.remove("if-market-consent-check--warn");
+          void consentCheck.offsetWidth;
+          consentCheck.classList.add("if-market-consent-check--warn");
+          if (consentWarnTimer) clearTimeout(consentWarnTimer);
+          consentWarnTimer = window.setTimeout(() => {
+            if (consentCheck instanceof HTMLElement) {
+              consentCheck.classList.remove("if-market-consent-check--warn");
+            }
+            consentWarnTimer = 0;
+          }, 900);
+        }
+
+        if (agree instanceof HTMLElement) agree.focus();
+      };
+
       agree?.addEventListener("change", () => {
-        if (ok) ok.disabled = !agree.checked;
+        if (agree?.checked && consentCheck instanceof HTMLElement) {
+          consentCheck.classList.remove("if-market-consent-check--warn");
+        }
       });
       keep?.addEventListener("change", () => {
         if (color) color.disabled = !!keep.checked;
@@ -1249,7 +1278,13 @@ class EmojiMarketPlugin extends Plugin {
         });
       }
 
-      ok?.addEventListener("click", () => finalize(true));
+      ok?.addEventListener("click", () => {
+        if (!agree?.checked) {
+          notifyConsentRequired();
+          return;
+        }
+        finalize(true);
+      });
       mask.addEventListener("click", (e) => {
         if (e.target === mask) finalize(false);
       });
@@ -1590,20 +1625,16 @@ class EmojiMarketPlugin extends Plugin {
     const cleaned = this.sanitizeSvg(raw);
     if (!cleaned) throw new Error(this.t("errorInvalidSvg"));
 
-    await this.ensureEmojiDir(source);
-
     const idPart = s(icon?.id ? String(icon.id) : "").trim() || String(Date.now());
     const namePart = slug(s(icon?.name) || s(detail?.title));
-    const base = namePart ? `${namePart}-${idPart}` : `emoji-${source.id}-${idPart}`;
+    const baseName = namePart ? `${namePart}-${idPart}` : `emoji-${source.id}-${idPart}`;
 
-    const fileName = `${base}.svg`;
+    const fileName = `${baseName}.svg`;
     const unicodePath = `${source.dir}/${fileName}`;
+    const savedBase = await this.writeEmojiFile(source, fileName, cleaned, "image/svg+xml");
 
-    const filePath = `${this.emojiBase}/${source.dir}/${fileName}`;
-    await this.putFile(filePath, cleaned, fileName, "image/svg+xml");
-
-    const legacyMetaPath = `${this.emojiBase}/${source.dir}/${base}.meta.json`;
-    await this.removeFileBestEffort(legacyMetaPath);
+    const legacyMetaPath = `${savedBase}/${source.dir}/${baseName}.meta.json`;
+    await this.removeFileIfExists(legacyMetaPath);
 
     return {unicodePath};
   }
@@ -1633,34 +1664,34 @@ class EmojiMarketPlugin extends Plugin {
     }
   }
 
-  async ensureEmojiDir(source) {
-    if (!this.emojiBase) {
-      const bases = ["/data/emojis", "/emojis"];
-      let lastErr = null;
-      for (const base of bases) {
-        try {
-          await this.putDir(base);
-          this.emojiBase = base;
-          break;
-        } catch (err) {
-          lastErr = err;
-        }
-      }
-      if (!this.emojiBase) throw lastErr || new Error(this.t("errorCreateDir"));
-    }
-
-    await this.putDir(`${this.emojiBase}/${source.dir}`);
+  getEmojiBaseCandidates() {
+    const ordered = [];
+    const push = (base) => {
+      const norm = s(base).trim();
+      if (!norm || ordered.includes(norm)) return;
+      ordered.push(norm);
+    };
+    push(this.emojiBase);
+    push("/data/emojis");
+    push("/emojis");
+    return ordered;
   }
 
-  async putDir(path) {
-    const form = new FormData();
-    form.append("path", path);
-    form.append("isDir", "true");
-    form.append("modTime", String(Date.now()));
-
-    const {ok, json, status} = await this.callPutFile(form);
-    if (!ok) throw new Error(json?.msg || `HTTP ${status}`);
-    if (json?.code !== 0 && !existsLike(json?.msg)) throw new Error(json?.msg || this.t("errorCreateDirFail"));
+  async writeEmojiFile(source, fileName, content, mime = "text/plain") {
+    let lastErr = null;
+    const bases = this.getEmojiBaseCandidates();
+    for (const base of bases) {
+      const filePath = `${base}/${source.dir}/${fileName}`;
+      try {
+        await this.putFile(filePath, content, fileName, mime);
+        this.emojiBase = base;
+        return base;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (lastErr) throw lastErr;
+    throw new Error(this.t("errorWriteFile"));
   }
 
   async putFile(path, content, fileName, mime = "text/plain") {
@@ -1713,6 +1744,28 @@ class EmojiMarketPlugin extends Plugin {
     } catch {
       return [];
     }
+  }
+
+  async removeFileIfExists(path) {
+    const fullPath = s(path).trim();
+    if (!fullPath) return;
+
+    const idx = Math.max(fullPath.lastIndexOf("/"), fullPath.lastIndexOf("\\"));
+    if (idx <= 0) return;
+    const dir = fullPath.slice(0, idx);
+    const fileName = fullPath.slice(idx + 1);
+    if (!fileName) return;
+
+    const rows = await this.readDirSafe(dir);
+    const exists = rows.some((row) => {
+      const rawName = s(row?.name || row?.path || "");
+      const rowName = rawName.replace(/^.*[\\/]/, "");
+      const isDir = row?.isDir === true || row?.isDir === "true";
+      return rowName === fileName && !isDir;
+    });
+
+    if (!exists) return;
+    await this.removeFileBestEffort(fullPath);
   }
 
   async removeFileBestEffort(path) {

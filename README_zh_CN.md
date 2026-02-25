@@ -81,3 +81,12 @@
 ## ❤️ 支持作者
 
 插件制作不易，如果觉得好用，欢迎点个 ⭐ Star 支持一下！
+
+## 🛠️ 其他信息
+
+- 🐞 问题反馈：  
+  [GitHub Issues](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/issues)
+- 📄 开源协议：  
+  [MIT License](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/LICENSE)
+- 🧾 更新日志：  
+  [CHANGELOG.md](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/CHANGELOG.md)
