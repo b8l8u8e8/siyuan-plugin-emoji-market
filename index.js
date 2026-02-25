@@ -287,7 +287,10 @@ class EmojiMarketPlugin extends Plugin {
       st.content = null;
     }
 
-    if (st.lastHintKw === kw && st.content && st.content.parentElement === panel) return;
+    if (st.lastHintKw === kw && st.content && st.content.parentElement === panel) {
+      this.showHintContainer(st);
+      return;
+    }
     st.lastHintKw = kw;
     void this.searchAndRender(st, kw);
   }
@@ -309,6 +312,12 @@ class EmojiMarketPlugin extends Plugin {
     } catch {
       return "";
     }
+  }
+
+  showHintContainer(st) {
+    if (!st?.isHint || !(st.panel instanceof HTMLElement)) return;
+    const host = st.panel.closest(".protyle-hint");
+    if (host instanceof HTMLElement) host.classList.remove("fn__none");
   }
 
   /* ── Search scheduling ── */
@@ -337,7 +346,7 @@ class EmojiMarketPlugin extends Plugin {
     try {
       if (!(st.title instanceof HTMLElement)) {
         st.title = document.createElement("div");
-        st.title.className = "emojis__title if-market-title";
+        st.title.className = "if-market-title";
       }
       if (!(st.content instanceof HTMLElement)) {
         st.content = document.createElement("div");
@@ -384,6 +393,7 @@ class EmojiMarketPlugin extends Plugin {
     let c;
     try {
       c = this.ensureSection(st);
+      this.showHintContainer(st);
     } catch (err) {
       console.error("[emoji-market] ensure section failed", err);
       return;
@@ -398,10 +408,12 @@ class EmojiMarketPlugin extends Plugin {
       const bySource = await this.searchAllSources(kw);
       if (st.disposed || st.seq !== seq) return;
       this.renderResults(st, kw, bySource);
+      this.showHintContainer(st);
     } catch (err) {
       if (st.disposed || st.seq !== seq) return;
       c.classList.remove("if-market-loading");
       c.innerHTML = `<div class="if-market-empty">${this.escapeHtml(this.t("searchFailed", {msg: safeMsg(err)}))}</div>`;
+      this.showHintContainer(st);
     }
   }
 
@@ -493,6 +505,7 @@ class EmojiMarketPlugin extends Plugin {
 
     try {
       const kw = s(btn.dataset.ifKeyword).trim();
+      const selectionCtx = this.captureSelectionContext();
       const detail = await this.getDetail(source, icon);
       const decision = await this.showImportDialog(source, icon, detail, kw);
       if (!decision?.confirmed) return;
@@ -503,18 +516,7 @@ class EmojiMarketPlugin extends Plugin {
         keepOriginalColor: decision.keepOriginalColor,
       });
 
-      if (btn.isConnected) {
-        btn.classList.add("emojis__item", "ariaLabel");
-        btn.setAttribute("data-unicode", saved.unicodePath);
-        btn.dataset.ifReady = "1";
-        btn.dataset.ifSaving = "0";
-        btn.classList.remove("if-market-item--saving");
-
-        await new Promise((r) => requestAnimationFrame(() => r()));
-        this.triggerNativeSelection(btn);
-      } else {
-        await this.directInsertEmoji(saved.unicodePath);
-      }
+      await this.applyImportedSelection(btn, source, icon, saved.unicodePath, selectionCtx);
     } catch (err) {
       const msg = this.t("downloadFailed", {source: source.name, msg: safeMsg(err)});
       if (typeof showMessage === "function") showMessage(msg, 3000, "error");
@@ -1452,10 +1454,125 @@ class EmojiMarketPlugin extends Plugin {
     return true;
   }
 
-  async directInsertEmoji(unicodePath) {
-    if (typeof showMessage === "function") {
-      showMessage(this.t("importSuccess", {path: unicodePath}), 4000);
+  prepareNativeEmojiButton(btn, unicodePath) {
+    if (!(btn instanceof HTMLElement)) return false;
+    btn.classList.add("emojis__item", "ariaLabel");
+    btn.setAttribute("data-unicode", unicodePath);
+    btn.dataset.ifReady = "1";
+    btn.dataset.ifSaving = "0";
+    btn.classList.remove("if-market-item--saving");
+    return true;
+  }
+
+  resolveLiveResultButton(btn, source, icon) {
+    if (btn instanceof HTMLElement && btn.isConnected) return btn;
+    const provider = s(source?.id || btn?.dataset?.ifProvider).trim();
+    const iconId = s(icon?.id !== undefined && icon?.id !== null ? String(icon.id) : btn?.dataset?.ifIconId).trim();
+    if (!provider || !iconId) return null;
+    const nodes = document.querySelectorAll(".if-market-item");
+    for (const node of nodes) {
+      if (!(node instanceof HTMLElement)) continue;
+      if (s(node.dataset.ifProvider).trim() !== provider) continue;
+      if (s(node.dataset.ifIconId).trim() !== iconId) continue;
+      return node;
     }
+    return null;
+  }
+
+  captureSelectionContext() {
+    try {
+      const sel = document.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      return {range: sel.getRangeAt(0).cloneRange()};
+    } catch {
+      return null;
+    }
+  }
+
+  restoreSelectionContext(ctx) {
+    if (!ctx?.range) return false;
+    try {
+      const sel = document.getSelection();
+      if (!sel) return false;
+      sel.removeAllRanges();
+      sel.addRange(ctx.range);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async applyImportedSelection(btn, source, icon, unicodePath, selectionCtx) {
+    const liveBtn = this.resolveLiveResultButton(btn, source, icon);
+    if (liveBtn) {
+      this.prepareNativeEmojiButton(liveBtn, unicodePath);
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      this.restoreSelectionContext(selectionCtx);
+      if (this.triggerNativeSelection(liveBtn)) return true;
+    }
+    return await this.directInsertEmoji(unicodePath, selectionCtx);
+  }
+
+  collectEmojiPanels() {
+    const out = [];
+    const seen = new Set();
+    const push = (panel) => {
+      if (!(panel instanceof HTMLElement)) return;
+      if (seen.has(panel)) return;
+      seen.add(panel);
+      out.push(panel);
+    };
+    document.querySelectorAll(".protyle-hint .emojis__panel").forEach(push);
+    document.querySelectorAll(".b3-dialog .emojis__panel").forEach(push);
+    document.querySelectorAll(".emojis__panel").forEach(push);
+    return out;
+  }
+
+  findNativeEmojiButton(unicodePath) {
+    const target = s(unicodePath).trim();
+    if (!target) return null;
+    const nodes = document.querySelectorAll(".emojis__item[data-unicode]");
+    for (const node of nodes) {
+      if (!(node instanceof HTMLElement)) continue;
+      if (s(node.getAttribute("data-unicode")).trim() === target) return node;
+    }
+    return null;
+  }
+
+  async directInsertEmoji(unicodePath, selectionCtx = null) {
+    const target = s(unicodePath).trim();
+    if (!target) return false;
+
+    const existing = this.findNativeEmojiButton(target);
+    if (existing) {
+      this.restoreSelectionContext(selectionCtx);
+      if (this.triggerNativeSelection(existing)) return true;
+    }
+
+    const panels = this.collectEmojiPanels();
+    for (const panel of panels) {
+      if (!(panel instanceof HTMLElement)) continue;
+      const host = panel.closest(".protyle-hint, .b3-dialog");
+      if (!(host instanceof HTMLElement)) continue;
+
+      const temp = document.createElement("button");
+      temp.type = "button";
+      temp.className = "emojis__item ariaLabel";
+      temp.setAttribute("data-unicode", target);
+      temp.style.position = "absolute";
+      temp.style.left = "-9999px";
+      temp.style.top = "-9999px";
+      temp.style.pointerEvents = "none";
+      temp.tabIndex = -1;
+      temp.textContent = "\u200b";
+      panel.appendChild(temp);
+
+      this.restoreSelectionContext(selectionCtx);
+      const ok = this.triggerNativeSelection(temp);
+      temp.remove();
+      if (ok) return true;
+    }
+    return false;
   }
 
   /* ── File operations ── */

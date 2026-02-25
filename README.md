@@ -1,54 +1,81 @@
-[中文](README_zh_CN.md) | English
+# ✨ Emoji Market
 
-# Emoji Market
+> 🤔 Feel like SiYuan Note's built-in emojis are too limited?  
+> 每次 Struggling to find the right icon for your document?  
+> **Emoji Market** helps you access massive icon libraries — if you can imagine it, you can find it.
 
-> Tired of the limited default icons in SiYuan Note? Can never find the right one for your document? **Emoji Market** connects you to massive icon libraries — if you can think of it, you can find it.
+A plugin built for SiYuan Note 🚀  
+Injects search results from mainstream icon platforms directly into SiYuan's native emoji panel.  
 
-A [SiYuan Note](https://b3log.org/siyuan/) plugin that brings icon search results from major icon platforms directly into the native emoji panel. Search, preview, pick a color, and use — all in one flow, without leaving SiYuan.
+🔍 Search → 👀 Preview → 🎨 Color Pick → ✅ Use  
+A seamless workflow without ever leaving SiYuan.
 
-## Icon Sources
+---
 
-| Source | Website | Scale | Description |
-|--------|---------|-------|-------------|
-| Iconfont | [iconfont.cn](https://www.iconfont.cn) | **30,000,000+** icons | Alibaba's vector icon library, one of the largest icon repositories in China |
-| Cainiao Icons | [icon.sucai999.com](https://icon.sucai999.com) | **3,000,000+** icons | Free icon search and download platform with rich categories |
+## 🎨 Icon Sources
 
-Combined, that's tens of millions of vector icons at your fingertips — from minimal line icons to detailed illustrations, in every category imaginable.
+| Source               | Website                                        | Scale           | Description                                                  |
+| :------------------- | :--------------------------------------------- | :-------------- | :----------------------------------------------------------- |
+| **Alibaba Iconfont** | [iconfont.cn](https://www.iconfont.cn)         | **30M+** Icons  | One of the largest vector icon libraries, preferred by designers and developers. |
+| **Cainiao Icons**    | [icon.sucai999.com](https://icon.sucai999.com) | **200K+** Icons | A free icon search and download platform with diverse categories. |
 
-## How It Works
+With tens of millions of vector icons combined —  
+From minimalist lines to exquisite illustrations, everything you need is here 🎉
 
-1. Open the emoji panel in SiYuan (click the emoji button on a document, or use `:` in text)
-2. Type any keyword in the search box — results from both icon platforms appear instantly in an **"Emoji Market"** section below the built-in results
-3. Click any icon to open a preview dialog showing author, license, and color options
-4. Optionally pick a custom color, or keep the original
-5. Check the confirmation box and click **"Use now"**
-6. The icon is saved locally and **automatically applied** — no extra clicks needed
+---
 
-**Nothing is stored until you explicitly choose to use an icon.** Browsing and previewing are purely in-memory and leave no files behind.
+## 📖 Demo (GIF from GitHub, may require a stable connection to load)
 
-## Where Are Icons Stored?
+![Demo GIF](https://github.com/user-attachments/assets/b51552ca-44f1-471b-b4b1-ce281ddd7b87)
+
+---
+
+## 🚀 How to Use
+
+1. **Open the emoji panel** in SiYuan  
+   (Click the emoji button on a document or type `:` in the editor).
+2. **Enter keywords** in the search bar.  
+   Results from both platforms will appear instantly in the **"Emoji Market"** section below the built-in results.
+3. **Click any icon** to open the preview dialog.  
+   View author details, license agreements, and color information.
+4. **Choose a custom color** 🎨 or keep the original.
+5. **Check the confirmation box** and click **"Use Now"**.
+6. The icon is **saved locally and applied automatically** ✅ — no further clicks required.
+
+🔒 **Storage Note:** Emojis are dynamically loaded and will not be written to local storage until you confirm your selection. Browsing and previewing are handled entirely in memory; everything is cleared upon closing, leaving no cache behind.
+
+---
+
+## 📂 Storage Location
 
 Icons you choose to use are saved as SVG files in SiYuan's standard custom emoji directories:
 
-- `data/emojis/iconfont/` — icons from Iconfont
-- `data/emojis/cainiao/` — icons from Cainiao Icons
+- `data/emojis/iconfont/` — From Alibaba Iconfont
+- `data/emojis/cainiao/` — From Cainiao Icons
 
-These are regular SiYuan custom emoji files. They persist even if you uninstall the plugin, and they show up in the emoji panel just like any other custom emoji. The plugin itself stores no configuration or other data.
+These are standard SiYuan custom emoji files.  
+They will remain and function normally in the emoji panel even if the plugin is uninstalled.  
 
-## Disclaimers
+The plugin itself does not store any configuration or other data.
 
-**This plugin is a convenience tool.** It provides a streamlined search-and-use interface. The icons themselves come from third-party platforms, not from the plugin author.
+---
 
-- All icons are sourced from **iconfont.cn** and **icon.sucai999.com**. The plugin author does **not** own, host, or distribute any icon assets.
-- Each icon has its own **license** set by its creator. Some are free for personal use, some allow commercial use, some are paid. The license types vary per icon.
-- **You are responsible** for checking whether your use of any icon complies with its license. The plugin shows author/license info where available but **cannot guarantee** its accuracy.
-- **Iconfont** icons are subject to the [Iconfont Platform Service Agreement](https://terms.alicdn.com/legal-agreement/terms/platform_service/20220704165734807/20220704165734807.html). Check whether an icon is marked "free" or "paid", "original" or "third-party open source" before use.
-- **Cainiao Icons** are subject to the platform's own terms and per-icon licenses.
-- For **commercial use**, always verify you have proper authorization from the rights holder.
-- This plugin is provided **"as-is"** with no warranty. The plugin author assumes **no liability** for any copyright or licensing issues.
+## ⚖️ Disclaimer
 
-## License
+**This plugin is a convenience tool only.** It provides a simplified interface for searching and using icons. All icon assets are sourced from third-party platforms and are not affiliated with the plugin author.
 
-Plugin source code: [MIT License](LICENSE)
+- All icons are sourced from **iconfont.cn** and **icon.sucai999.com**.
+- The plugin author **does not own, host, or distribute** any icon assets.
+- Each icon has its own independent license terms (Free / Commercial / Paid).
+- Users are responsible for verifying that their use of an icon complies with its specific license.
+- The plugin attempts to display author and license information but **does not guarantee its accuracy**.
+- For **commercial use** 💼, please ensure you obtain formal authorization from the respective creator.
 
-This license covers **only the plugin code**, not icons imported through it. Icons are governed by their own respective licenses.
+This plugin is provided **"as is"**, without warranty of any kind.  
+The author assumes no liability for any copyright or legal issues arising from the use of these icons.
+
+---
+
+## ❤️ Support the Project
+
+Developing plugins takes time and effort. If you find this tool helpful, please consider giving it a ⭐ Star to show your support!

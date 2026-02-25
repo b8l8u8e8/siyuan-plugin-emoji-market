@@ -4,6 +4,11 @@
   align-content: flex-start;
 }
 
+.if-market-title {
+  color: var(--b3-theme-on-surface);
+  padding: 8px 4px 4px;
+}
+
 .if-market-source-block {
   margin-bottom: 10px;
 }

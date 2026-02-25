@@ -4,7 +4,7 @@
   "url": "",
   "version": "0.1.0",
   "minAppVersion": "2.9.0",
-  "disabledInPublish": false,
+  "disabledInPublish": true,
   "backends": [
     "all"
   ],

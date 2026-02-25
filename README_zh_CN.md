@@ -1,4 +1,4 @@
-# ✨ 表情市场 (Emoji Market)
+# ✨ 表情市场
 
 > 🤔 觉得思源笔记自带的表情太少？  
 > 每次想给文档换个图标却找不到合适的？  
@@ -9,6 +9,9 @@
 
 🔍 搜索 → 👀 预览 → 🎨 选色 → ✅ 使用  
 全流程一气呵成，无需离开思源。
+
+🌍 文档语言：  
+[中文 README](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/README_zh_CN.md) ｜ [English README](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/README.md)
 
 ---
 
