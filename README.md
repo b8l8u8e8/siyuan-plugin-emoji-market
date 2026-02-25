@@ -1,7 +1,7 @@
 # ✨ Emoji Market
 
 > 🤔 Feel like SiYuan Note's built-in emojis are too limited?  
-> 每次想给文档换个图标却找不到合适的？ (Can't find the right icon when changing document covers?)  
+> Can't find the right icon when changing document covers?  
 > **Emoji Market** helps you access massive icon libraries — if you can dream it, you can find it.
 
 A plugin built for SiYuan Note 🚀  
