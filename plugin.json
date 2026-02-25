@@ -2,7 +2,7 @@
   "name": "siyuan-plugin-emoji-market",
   "author": "取舍",
   "url": "https://github.com/b8l8u8e8/siyuan-plugin-emoji-market",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "minAppVersion": "2.9.0",
   "disabledInPublish": true,
   "backends": [

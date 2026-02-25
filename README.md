@@ -57,8 +57,6 @@ Icons you choose to use will be saved as SVG files in SiYuan's standard custom e
 These are standard SiYuan custom emoji files.  
 They will be retained and display normally in the emoji panel even if the plugin is uninstalled.
 
-The plugin itself does not store any configurations or other data.
-
 ---
 
 ## ⚖️ Disclaimer
