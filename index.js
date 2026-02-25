@@ -546,16 +546,16 @@ class EmojiMarketPlugin extends Plugin {
     const cached = this.searchCache.get(key);
     if (cached && now - cached.at < SEARCH_TTL) return cached.items;
 
-    const body = new URLSearchParams();
-    body.set("q", keyword);
-    body.set("page", "1");
-    body.set("count", String(MAX_PER_SOURCE * 2));
-    body.set("sortType", "updated_at");
-    body.set("fromCollection", "1");
+    const params = new URLSearchParams();
+    params.set("q", keyword);
+    params.set("page", "1");
+    params.set("count", String(MAX_PER_SOURCE * 2));
+    params.set("sortType", "updated_at");
+    params.set("fromCollection", "1");
 
     const ref = `${SOURCE_MAP.iconfont.origin}/search/index?searchType=icon&q=${encodeURIComponent(keyword)}`;
     const json = await this.requestJson(
-      `${SOURCE_MAP.iconfont.origin}/api/icon/search.json`,
+      `${SOURCE_MAP.iconfont.origin}/api/icon/search.json?${params.toString()}`,
       {
         method: "POST",
         headers: {
@@ -565,7 +565,6 @@ class EmojiMarketPlugin extends Plugin {
           "User-Agent": "Mozilla/5.0",
           "X-Requested-With": "XMLHttpRequest",
         },
-        body: body.toString(),
       },
       SOURCE_MAP.iconfont.origin
     );
@@ -1799,47 +1798,122 @@ class EmojiMarketPlugin extends Plugin {
 
   /* ── Network requests ── */
 
-  fetchAvatarDataUrl(url) {
+  async fetchAvatarDataUrl(url) {
+    const errors = [];
+
+    try {
+      return await this.fetchAvatarByFetch(url);
+    } catch (err) {
+      errors.push(err);
+    }
+
+    try {
+      return await this.fetchAvatarByForwardProxy(url);
+    } catch (err) {
+      errors.push(err);
+    }
+
+    try {
+      return await this.fetchAvatarByNode(url);
+    } catch (err) {
+      errors.push(err);
+    }
+
+    throw errors.length ? errors[errors.length - 1] : new Error("Failed to fetch avatar");
+  }
+
+  async fetchAvatarByFetch(url) {
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Referer: `${SOURCE_MAP.iconfont.origin}/`,
+        Accept: "image/*,*/*",
+      },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await this.blobToDataUrl(await resp.blob());
+  }
+
+  async fetchAvatarByForwardProxy(url) {
+    const data = await this.requestByForwardProxy(
+      url,
+      {
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          Referer: `${SOURCE_MAP.iconfont.origin}/`,
+          Origin: SOURCE_MAP.iconfont.origin,
+          Accept: "image/*,*/*",
+        },
+      },
+      "base64"
+    );
+    const ct = this.forwardProxyContentType(data, "image/png").split(";")[0].trim() || "image/png";
+    const body = this.forwardProxyBody(data);
+    if (!body) throw new Error("Empty avatar body");
+    return `data:${ct};base64,${body}`;
+  }
+
+  fetchAvatarByNode(url) {
     return new Promise((resolve, reject) => {
-      let https, http;
-      try {
-        https = require("https");
-        http = require("http");
-      } catch (err) {
-        reject(err);
+      const node = this.getNodeHttpClients();
+      if (!node) {
+        reject(new Error("Node HTTP APIs unavailable"));
         return;
       }
 
+      const {https, http, Buffer: NodeBuffer} = node;
       const doFetch = (target, depth) => {
-        if (depth > 4) { reject(new Error("Too many redirects")); return; }
+        if (depth > 4) {
+          reject(new Error("Too many redirects"));
+          return;
+        }
+
         const parsed = new URL(target);
         const client = parsed.protocol === "http:" ? http : https;
-        const req = client.request(parsed, {
-          method: "GET",
-          headers: {
-            "User-Agent": "Mozilla/5.0",
-            Referer: "https://www.iconfont.cn/",
-            Accept: "image/*,*/*",
+        const req = client.request(
+          parsed,
+          {
+            method: "GET",
+            headers: {
+              "User-Agent": "Mozilla/5.0",
+              Referer: `${SOURCE_MAP.iconfont.origin}/`,
+              Accept: "image/*,*/*",
+            },
           },
-        }, (res) => {
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            doFetch(new URL(res.headers.location, target).toString(), depth + 1);
-            return;
+          (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              doFetch(new URL(res.headers.location, target).toString(), depth + 1);
+              return;
+            }
+            if (res.statusCode >= 400) {
+              reject(new Error(`HTTP ${res.statusCode}`));
+              return;
+            }
+            const chunks = [];
+            res.on("data", (chunk) => chunks.push(chunk));
+            res.on("end", () => {
+              const buffer = NodeBuffer.concat(chunks);
+              const ct = s(res.headers["content-type"], "image/png").split(";")[0].trim() || "image/png";
+              resolve(`data:${ct};base64,${buffer.toString("base64")}`);
+            });
           }
-          if (res.statusCode >= 400) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
-          const chunks = [];
-          res.on("data", (chunk) => chunks.push(chunk));
-          res.on("end", () => {
-            const buffer = Buffer.concat(chunks);
-            const ct = (res.headers["content-type"] || "image/png").split(";")[0].trim();
-            resolve(`data:${ct};base64,${buffer.toString("base64")}`);
-          });
-        });
+        );
         req.on("error", reject);
         req.end();
       };
 
       doFetch(url, 0);
+    });
+  }
+
+  blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(s(reader.result));
+      reader.onerror = () => reject(reader.error || new Error("Read blob failed"));
+      reader.readAsDataURL(blob);
     });
   }
 
@@ -1853,10 +1927,30 @@ class EmojiMarketPlugin extends Plugin {
   }
 
   async requestText(url, options = {}, origin = "") {
+    const errors = [];
+
     try {
       return await this.requestByFetch(url, options);
-    } catch {
+    } catch (err) {
+      errors.push(err);
+    }
+
+    try {
+      const data = await this.requestByForwardProxy(url, options, "text");
+      return this.forwardProxyBody(data);
+    } catch (err) {
+      errors.push(err);
+    }
+
+    if (!this.canUseNodeHttp()) {
+      throw errors.length ? errors[errors.length - 1] : new Error("No available request transport");
+    }
+
+    try {
       return await this.requestByNode(url, options, origin, 0);
+    } catch (err) {
+      errors.push(err);
+      throw errors[errors.length - 1];
     }
   }
 
@@ -1870,17 +1964,97 @@ class EmojiMarketPlugin extends Plugin {
     return await resp.text();
   }
 
+  async requestByForwardProxy(url, options = {}, responseEncoding = "text") {
+    const method = s(options.method, "GET").toUpperCase();
+
+    const headers = {};
+    Object.entries(options.headers || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) headers[k] = String(v);
+    });
+
+    let body = options.body;
+    if (body instanceof URLSearchParams) body = body.toString();
+    else if (body !== undefined && body !== null && typeof body !== "string") body = String(body);
+    else if (body === undefined || body === null) body = "";
+
+    const contentTypePair = Object.entries(headers).find(([k]) => k.toLowerCase() === "content-type");
+    const payload = {
+      url,
+      method,
+      timeout: 15000,
+      contentType: contentTypePair ? contentTypePair[1] : "application/json",
+      headers: Object.keys(headers).length ? [headers] : [],
+      payload: body,
+      payloadEncoding: "text",
+      responseEncoding,
+    };
+
+    const resp = await fetch("/api/network/forwardProxy", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+      },
+      body: JSON.stringify(payload),
+    });
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const code = Number(json?.code ?? json?.Code ?? -1);
+    if (code !== 0) throw new Error(s(json?.msg ?? json?.Msg, `forwardProxy error (${json?.code ?? json?.Code ?? "unknown"})`));
+
+    const data = json?.data ?? json?.Data ?? {};
+    const status = Number(data?.status ?? data?.StatusCode ?? data?.statusCode ?? 0);
+    if (!status) throw new Error("Invalid forwardProxy status");
+    if (status >= 400) throw new Error(`HTTP ${status}`);
+    return data;
+  }
+
+  forwardProxyBody(data) {
+    if (!data || typeof data !== "object") return "";
+    if (data.body !== undefined && data.body !== null) return String(data.body);
+    if (data.Body !== undefined && data.Body !== null) return String(data.Body);
+    return "";
+  }
+
+  forwardProxyContentType(data, fallback = "") {
+    if (!data || typeof data !== "object") return fallback;
+    if (data.contentType !== undefined && data.contentType !== null) return String(data.contentType);
+    if (data.ContentType !== undefined && data.ContentType !== null) return String(data.ContentType);
+    return fallback;
+  }
+
+  canUseNodeHttp() {
+    return !!this.getNodeHttpClients();
+  }
+
+  getNodeHttpClients() {
+    if (typeof require !== "function") return null;
+
+    let https;
+    let http;
+    try {
+      https = require("https");
+      http = require("http");
+    } catch {
+      return null;
+    }
+
+    if (!https || typeof https.request !== "function") return null;
+    if (!http || typeof http.request !== "function") return null;
+    if (typeof Buffer === "undefined" || typeof Buffer.concat !== "function" || typeof Buffer.byteLength !== "function") return null;
+    return {https, http, Buffer};
+  }
+
   requestByNode(url, options = {}, origin = "", depth = 0) {
     return new Promise((resolve, reject) => {
-      let https;
-      let http;
-      try {
-        https = require("https");
-        http = require("http");
-      } catch (err) {
-        reject(err);
+      const node = this.getNodeHttpClients();
+      if (!node) {
+        reject(new Error("Node HTTP APIs unavailable"));
         return;
       }
+
+      const {https, http, Buffer: NodeBuffer} = node;
 
       const parsed = new URL(url);
       const client = parsed.protocol === "http:" ? http : https;
@@ -1898,7 +2072,7 @@ class EmojiMarketPlugin extends Plugin {
       let body = options.body;
       if (body instanceof URLSearchParams) body = body.toString();
       else if (body !== undefined && body !== null && typeof body !== "string") body = String(body);
-      if (body && !hasHeader(headers, "Content-Length")) headers["Content-Length"] = String(Buffer.byteLength(body, "utf8"));
+      if (body && !hasHeader(headers, "Content-Length")) headers["Content-Length"] = String(NodeBuffer.byteLength(body, "utf8"));
 
       const req = client.request(
         parsed,
