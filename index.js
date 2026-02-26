@@ -1,6 +1,6 @@
 /* Emoji Market - SiYuan plugin (no-build single file) */
 
-const {Plugin, showMessage, Setting, Dialog} = require("siyuan");
+const {Plugin, showMessage, Setting, Dialog, getAllEditor} = require("siyuan");
 
 const SOURCES = [
   {
@@ -383,7 +383,7 @@ class EmojiMarketPlugin extends Plugin {
       if (st?.dispose) st.dispose();
       root.removeAttribute("data-if-market-enhanced");
     });
-    document.querySelectorAll(".if-market-title,.if-market-content").forEach((el) => el.remove());
+    document.querySelectorAll('[data-if-market="1"]').forEach((el) => el.remove());
   }
 
   enhancePanel(root) {
@@ -407,6 +407,7 @@ class EmojiMarketPlugin extends Plugin {
       panel,
       title: null,
       content: null,
+      marketNodes: [],
       timer: 0,
       seq: 0,
       disposed: false,
@@ -460,6 +461,7 @@ class EmojiMarketPlugin extends Plugin {
         panel,
         title: null,
         content: null,
+        marketNodes: [],
         timer: 0,
         seq: 0,
         disposed: false,
@@ -532,46 +534,67 @@ class EmojiMarketPlugin extends Plugin {
   }
 
   removeSection(st) {
-    if (st?.title?.parentElement) st.title.remove();
-    if (st?.content?.parentElement) st.content.remove();
+    const nodes = Array.isArray(st?.marketNodes) ? st.marketNodes : [];
+    nodes.forEach((node) => {
+      if (node instanceof HTMLElement && node.parentElement) node.remove();
+    });
+    if (st) {
+      st.marketNodes = [];
+      st.title = null;
+      st.content = null;
+    }
+  }
+
+  getPanelInsertAnchor(panel, exclude = new Set()) {
+    if (!(panel instanceof HTMLElement)) return null;
+    let titles = [];
+    try {
+      titles = Array.from(panel.children).filter(
+        (el) =>
+          el instanceof HTMLElement &&
+          el.classList.contains("emojis__title") &&
+          !exclude.has(el) &&
+          s(el.dataset?.ifMarket).trim() !== "1"
+      );
+    } catch {
+      titles = [];
+    }
+    return titles.length >= 2 ? titles[1] : null;
+  }
+
+  insertMarketNodes(st, nodes) {
+    if (!st || !(st.panel instanceof HTMLElement)) return;
+    const valid = Array.isArray(nodes) ? nodes.filter((el) => el instanceof HTMLElement) : [];
+    if (!valid.length) {
+      this.removeSection(st);
+      return;
+    }
+
+    const panel = st.panel;
+    const exclude = new Set(valid);
+    const anchor = this.getPanelInsertAnchor(panel, exclude);
+    valid.forEach((node) => {
+      if (node.parentElement) node.remove();
+      panel.insertBefore(node, anchor);
+    });
+    st.marketNodes = valid;
+    st.title = valid.find((el) => el.classList.contains("emojis__title")) || null;
+    st.content = valid.find((el) => el.classList.contains("emojis__content")) || null;
   }
 
   ensureSection(st) {
     this._mutating = true;
     try {
-      if (!(st.title instanceof HTMLElement)) {
-        st.title = document.createElement("div");
-        st.title.className = "if-market-title";
-      }
-      if (!(st.content instanceof HTMLElement)) {
-        st.content = document.createElement("div");
-        st.content.className = "emojis__content if-market-content";
-      }
-
-      if (st.title.parentElement !== st.panel || st.content.parentElement !== st.panel) {
-        if (st.title.parentElement) st.title.remove();
-        if (st.content.parentElement) st.content.remove();
-
-        let titles = [];
-        try {
-          titles = Array.from(st.panel.children).filter(
-            (el) => el instanceof HTMLElement && el.classList.contains("emojis__title")
-          );
-        } catch {
-          titles = Array.from(st.panel.querySelectorAll(".emojis__title"));
-        }
-        const anchor = titles.length >= 2 ? titles[1] : null;
-        if (anchor) {
-          st.panel.insertBefore(st.title, anchor);
-          st.panel.insertBefore(st.content, anchor);
-        } else {
-          st.panel.appendChild(st.title);
-          st.panel.appendChild(st.content);
-        }
-      }
-
-      st.title.textContent = this.t("storeTitle");
-      return st.content;
+      this.removeSection(st);
+      const title = document.createElement("div");
+      title.className = "emojis__title";
+      title.dataset.ifMarket = "1";
+      title.textContent = this.t("storeTitle");
+      const content = document.createElement("div");
+      content.className = "emojis__content";
+      content.dataset.ifMarket = "1";
+      this.insertMarketNodes(st, [title, content]);
+      return content;
     } finally {
       this._mutating = false;
     }
@@ -594,7 +617,7 @@ class EmojiMarketPlugin extends Plugin {
       return;
     }
     c.classList.add("if-market-loading");
-    c.innerHTML = `<div class="if-market-searching">${this.escapeHtml(this.t("searching"))}</div>`;
+    c.innerHTML = `<div class="emojis__title if-market-searching" data-if-market="1">${this.escapeHtml(this.t("searching"))}</div>`;
 
     st.seq += 1;
     const seq = st.seq;
@@ -603,7 +626,7 @@ class EmojiMarketPlugin extends Plugin {
       const enabledSources = this.getEnabledSources();
       if (!enabledSources.length) {
         c.classList.remove("if-market-loading");
-        c.innerHTML = `<div class="if-market-empty">${this.escapeHtml(this.t("settingsNoSourceEnabled"))}</div>`;
+        c.innerHTML = `<div class="emojis__title if-market-empty" data-if-market="1">${this.escapeHtml(this.t("settingsNoSourceEnabled"))}</div>`;
         this.showHintContainer(st);
         return;
       }
@@ -615,57 +638,49 @@ class EmojiMarketPlugin extends Plugin {
     } catch (err) {
       if (st.disposed || st.seq !== seq) return;
       c.classList.remove("if-market-loading");
-      c.innerHTML = `<div class="if-market-empty">${this.escapeHtml(this.t("searchFailed", {msg: safeMsg(err)}))}</div>`;
+      c.innerHTML = `<div class="emojis__title if-market-empty" data-if-market="1">${this.escapeHtml(this.t("searchFailed", {msg: safeMsg(err)}))}</div>`;
       this.showHintContainer(st);
     }
   }
 
   renderResults(st, kw, sources, bySource) {
-    const c = this.ensureSection(st);
     this._mutating = true;
     try {
-      c.classList.remove("if-market-loading");
-      c.innerHTML = "";
-      const frag = document.createDocumentFragment();
+      const nodes = [];
       sources.forEach((source) => {
-        frag.appendChild(this.renderSourceBlock(source, kw, bySource[source.id] || {items: [], error: null}));
+        const pair = this.renderSourceBlock(source, kw, bySource[source.id] || {items: [], error: null});
+        nodes.push(...pair);
       });
-      c.appendChild(frag);
+      this.removeSection(st);
+      this.insertMarketNodes(st, nodes);
     } finally {
       this._mutating = false;
     }
   }
 
   renderSourceBlock(source, kw, res) {
-    const block = document.createElement("section");
-    block.className = "if-market-source-block";
-
     const t = document.createElement("div");
-    t.className = "if-market-source-title";
+    t.className = "emojis__title";
+    t.dataset.ifMarket = "1";
     t.textContent = `${this.t("storeTitle")} - ${source.name}`;
-    block.appendChild(t);
 
     const body = document.createElement("div");
-    body.className = "if-market-source-items";
-    block.appendChild(body);
+    body.className = "emojis__content";
+    body.dataset.ifMarket = "1";
 
     if (res.error) {
-      body.innerHTML = `<div class="if-market-empty">${this.escapeHtml(this.t("sourceSearchFailed", {source: source.name, msg: safeMsg(res.error)}))}</div>`;
-      return block;
+      body.innerHTML = `<div class="emojis__title if-market-empty" data-if-market="1">${this.escapeHtml(this.t("sourceSearchFailed", {source: source.name, msg: safeMsg(res.error)}))}</div>`;
+      return [t, body];
     }
 
     const items = Array.isArray(res.items) ? res.items.slice(0, this.getMaxPerSource(source.id)) : [];
     if (!items.length) {
-      body.innerHTML = `<div class="if-market-empty">${this.escapeHtml(this.t("noResults", {kw}))}</div>`;
-      return block;
+      body.innerHTML = `<div class="emojis__title if-market-empty" data-if-market="1">${this.escapeHtml(this.t("noResults", {kw}))}</div>`;
+      return [t, body];
     }
 
-    const grid = document.createElement("div");
-    grid.className = "if-market-item-grid";
-    body.appendChild(grid);
-
-    items.forEach((icon) => grid.appendChild(this.createResultButton(source, icon, kw)));
-    return block;
+    items.forEach((icon) => body.appendChild(this.createResultButton(source, icon, kw)));
+    return [t, body];
   }
 
   /* 鈹€鈹€ Result buttons (FIX #1: no emojis__item class initially) 鈹€鈹€ */
@@ -673,26 +688,33 @@ class EmojiMarketPlugin extends Plugin {
   createResultButton(source, icon, kw) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "if-market-item";
+    btn.className = "emojis__item ariaLabel";
     btn.setAttribute("aria-label", s(icon?.name, "icon"));
+    btn.dataset.ifMarket = "1";
     btn.dataset.ifKeyword = kw;
     btn.dataset.ifProvider = source.id;
     btn.dataset.ifIconId = s(icon?.id);
+    btn.dataset.ifReady = "0";
+    btn.dataset.ifSaving = "0";
 
     const preview = this.safeSvgElement(icon?.previewSvg);
     if (preview) btn.appendChild(preview);
     else btn.textContent = "?";
 
-    btn.addEventListener("pointerdown", (e) => {
+    const trapPendingNativePick = (e) => {
       if (btn.dataset.ifReady === "1") return;
       e.preventDefault();
       e.stopPropagation();
-    });
+      if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+    };
+    btn.addEventListener("pointerdown", trapPendingNativePick, {capture: true});
+    btn.addEventListener("mousedown", trapPendingNativePick, {capture: true});
 
     btn.addEventListener("click", (e) => {
       if (btn.dataset.ifReady === "1") return;
       e.preventDefault();
       e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
       void this.onPick(btn, source, icon);
     });
 
@@ -708,7 +730,7 @@ class EmojiMarketPlugin extends Plugin {
 
     try {
       const kw = s(btn.dataset.ifKeyword).trim();
-      const selectionCtx = this.captureSelectionContext();
+      const selectionCtx = this.captureSelectionContext(btn);
       const detail = await this.getDetail(source, icon);
       const decision = await this.showImportDialog(source, icon, detail, kw);
       if (!decision?.confirmed) return;
@@ -718,8 +740,17 @@ class EmojiMarketPlugin extends Plugin {
         selectedColor: decision.selectedColor,
         keepOriginalColor: decision.keepOriginalColor,
       });
+      await this.refreshRuntimeEmojiCache(saved.unicodePath);
 
-      await this.applyImportedSelection(btn, source, icon, saved.unicodePath, selectionCtx);
+      await this.applyImportedSelection(
+        btn,
+        source,
+        icon,
+        saved.unicodePath,
+        selectionCtx,
+        kw,
+        !!btn.closest(".protyle-hint, .hint--menu")
+      );
     } catch (err) {
       const msg = this.t("downloadFailed", {source: source.name, msg: safeMsg(err)});
       if (typeof showMessage === "function") showMessage(msg, 3000, "error");
@@ -1167,7 +1198,7 @@ class EmojiMarketPlugin extends Plugin {
 
     const avatarUrl = httpsUrl(s(detail?.avatarUrl));
     const avatarHtml = avatarUrl
-      ? `<img class="if-iconfont-avatar" src="${this.escapeHtml(avatarUrl)}" alt="${authorText}" referrerpolicy="no-referrer" /><div class="if-iconfont-avatar if-iconfont-avatar--placeholder" style="display:none">?</div>`
+      ? `<img class="if-iconfont-avatar" src="${this.escapeHtml(avatarUrl)}" alt="${authorText}" referrerpolicy="no-referrer" style="display:none" /><div class="if-iconfont-avatar if-iconfont-avatar--placeholder if-iconfont-avatar--loading"></div>`
       : `<div class="if-iconfont-avatar if-iconfont-avatar--placeholder">?</div>`;
 
     const collectionName = this.escapeHtml(s(detail?.collectionName));
@@ -1334,17 +1365,17 @@ class EmojiMarketPlugin extends Plugin {
         if (r) r(payload);
       };
 
-      dialog = new Dialog({
-        title: `${this.t("storeTitle")} - ${source.name}`,
+      const dialogOpts = {
+        title: "",
         content: html,
-        width: this.isMobile ? "96vw" : "920px",
-        height: this.isMobile ? "92vh" : "78vh",
+        width: "min(920px, 92vw)",
         containerClassName: "if-market-import-container",
         destroyCallback: () => {
           if (this.importDialog === dialog) this.importDialog = null;
           settle({confirmed: false, keepOriginalColor: true, selectedColor: ""});
         },
-      });
+      };
+      dialog = new Dialog(dialogOpts);
       this.importDialog = dialog;
 
       const root = dialog.element?.querySelector?.(".if-market-consent-panel");
@@ -1355,26 +1386,60 @@ class EmojiMarketPlugin extends Plugin {
       }
 
       const avatarImg = root.querySelector("img.if-iconfont-avatar");
-      if (avatarImg) {
+      const avatarPlaceholder = root.querySelector(".if-iconfont-avatar--placeholder");
+      if (avatarImg instanceof HTMLImageElement) {
         const origAvatarUrl = avatarUrl;
-        avatarImg.addEventListener("error", () => {
-          if (origAvatarUrl) {
-            this.fetchAvatarDataUrl(origAvatarUrl).then((dataUrl) => {
-              avatarImg.src = dataUrl;
-              avatarImg.style.display = "";
-              const placeholder = avatarImg.nextElementSibling;
-              if (placeholder) placeholder.style.display = "none";
-            }).catch(() => {
-              avatarImg.style.display = "none";
-              const placeholder = avatarImg.nextElementSibling;
-              if (placeholder) placeholder.style.display = "";
-            });
-          } else {
-            avatarImg.style.display = "none";
-            const placeholder = avatarImg.nextElementSibling;
-            if (placeholder) placeholder.style.display = "";
+        let triedFallback = false;
+
+        const showLoading = () => {
+          avatarImg.style.display = "none";
+          if (avatarPlaceholder instanceof HTMLElement) {
+            avatarPlaceholder.style.display = "";
+            avatarPlaceholder.classList.add("if-iconfont-avatar--loading");
+            avatarPlaceholder.textContent = "";
           }
-        });
+        };
+
+        const showReady = () => {
+          avatarImg.style.display = "";
+          if (avatarPlaceholder instanceof HTMLElement) {
+            avatarPlaceholder.style.display = "none";
+            avatarPlaceholder.classList.remove("if-iconfont-avatar--loading");
+            avatarPlaceholder.textContent = "?";
+          }
+        };
+
+        const showFallback = () => {
+          avatarImg.style.display = "none";
+          if (avatarPlaceholder instanceof HTMLElement) {
+            avatarPlaceholder.style.display = "";
+            avatarPlaceholder.classList.remove("if-iconfont-avatar--loading");
+            avatarPlaceholder.textContent = "?";
+          }
+        };
+
+        const fetchFallback = () => {
+          if (!origAvatarUrl || triedFallback) {
+            showFallback();
+            return;
+          }
+          triedFallback = true;
+          showLoading();
+          this.fetchAvatarDataUrl(origAvatarUrl).then((dataUrl) => {
+            avatarImg.src = dataUrl;
+          }).catch(() => {
+            showFallback();
+          });
+        };
+
+        showLoading();
+        avatarImg.addEventListener("load", showReady);
+        avatarImg.addEventListener("error", fetchFallback);
+
+        if (avatarImg.complete) {
+          if (avatarImg.naturalWidth > 0) showReady();
+          else fetchFallback();
+        }
       }
 
       const agree = root.querySelector('[data-role="agree"]');
@@ -1589,6 +1654,12 @@ class EmojiMarketPlugin extends Plugin {
   triggerNativeSelection(btn) {
     if (!(btn instanceof HTMLElement) || !btn.isConnected) return false;
     try {
+      btn.click();
+      return true;
+    } catch {
+      // Fallback for environments where synthetic click is blocked.
+    }
+    try {
       const rect = btn.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
@@ -1620,7 +1691,7 @@ class EmojiMarketPlugin extends Plugin {
     const provider = s(source?.id || btn?.dataset?.ifProvider).trim();
     const iconId = s(icon?.id !== undefined && icon?.id !== null ? String(icon.id) : btn?.dataset?.ifIconId).trim();
     if (!provider || !iconId) return null;
-    const nodes = document.querySelectorAll(".if-market-item");
+    const nodes = document.querySelectorAll('.emojis__item[data-if-market="1"]');
     for (const node of nodes) {
       if (!(node instanceof HTMLElement)) continue;
       if (s(node.dataset.ifProvider).trim() !== provider) continue;
@@ -1630,30 +1701,306 @@ class EmojiMarketPlugin extends Plugin {
     return null;
   }
 
-  captureSelectionContext() {
+  getAllProtyles() {
     try {
-      const sel = document.getSelection();
-      if (!sel || !sel.rangeCount) return null;
-      return {range: sel.getRangeAt(0).cloneRange()};
+      if (typeof getAllEditor !== "function") return [];
+      const editors = getAllEditor();
+      if (!Array.isArray(editors)) return [];
+      return editors
+        .map((editor) => editor?.protyle || editor)
+        .filter((protyle) => protyle && protyle.hint && protyle.toolbar);
     } catch {
-      return null;
+      return [];
     }
   }
 
-  restoreSelectionContext(ctx) {
-    if (!ctx?.range) return false;
+  getCustomEmojiCategory() {
+    const emojis = globalThis?.siyuan?.emojis;
+    if (!Array.isArray(emojis)) return null;
+    const first = emojis[0];
+    if (first && Array.isArray(first.items)) return first;
+    return null;
+  }
+
+  syncEditorsEmojiMap() {
+    const category = this.getCustomEmojiCategory();
+    const customItems = Array.isArray(category?.items) ? category.items : [];
+    const protyles = this.getAllProtyles();
+
+    protyles.forEach((protyle) => {
+      const lute = protyle?.lute;
+      const hintPath = s(protyle?.options?.hint?.emojiPath).trim();
+      if (!lute || typeof lute.PutEmojis !== "function" || !hintPath) return;
+      const map = {};
+      customItems.forEach((item) => {
+        const keywords = s(item?.keywords).trim();
+        const unicode = s(item?.unicode).trim();
+        if (!keywords || !unicode) return;
+        map[keywords] = `${hintPath}/${unicode}`;
+      });
+      try {
+        lute.PutEmojis(map);
+      } catch {
+        // ignore per-editor sync errors
+      }
+    });
+  }
+
+  ensureRuntimeCustomEmoji(unicodePath) {
+    const target = s(unicodePath).trim();
+    if (!target || target.indexOf(".") < 0) return;
+    const alias = s(target.split(".")[0]).trim();
+    if (!alias) return;
+
+    if (!globalThis?.siyuan) return;
+    if (!Array.isArray(globalThis.siyuan.emojis)) {
+      globalThis.siyuan.emojis = [{id: "custom", title: "Custom", items: []}];
+    }
+    if (!globalThis.siyuan.emojis[0] || !Array.isArray(globalThis.siyuan.emojis[0].items)) {
+      globalThis.siyuan.emojis[0] = {id: "custom", title: "Custom", items: []};
+    }
+
+    const items = globalThis.siyuan.emojis[0].items;
+    const exists = items.some((item) => s(item?.unicode).trim() === target || s(item?.keywords).trim() === alias);
+    if (exists) return;
+
+    items.unshift({
+      unicode: target,
+      keywords: alias,
+      description: alias,
+      description_zh_cn: alias,
+      description_ja_jp: alias,
+    });
+  }
+
+  async reloadEmojiConf() {
     try {
-      const sel = document.getSelection();
-      if (!sel) return false;
-      sel.removeAllRanges();
-      sel.addRange(ctx.range);
+      const resp = await fetch("/api/system/getEmojiConf", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+        },
+        body: "{}",
+      });
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok || json?.code !== 0 || !Array.isArray(json?.data)) return false;
+      if (globalThis?.siyuan) globalThis.siyuan.emojis = json.data;
       return true;
     } catch {
       return false;
     }
   }
 
-  async applyImportedSelection(btn, source, icon, unicodePath, selectionCtx) {
+  async refreshRuntimeEmojiCache(unicodePath) {
+    await this.reloadEmojiConf();
+    this.ensureRuntimeCustomEmoji(unicodePath);
+    this.syncEditorsEmojiMap();
+  }
+
+  findProtyleByHintElement(hintElement) {
+    if (!(hintElement instanceof HTMLElement)) return null;
+    const list = this.getAllProtyles();
+    for (const protyle of list) {
+      if (protyle?.hint?.element === hintElement) return protyle;
+    }
+    return null;
+  }
+
+  resolveHintProtyle(selectionCtx) {
+    const direct = selectionCtx?.protyle;
+    if (direct?.hint && direct?.toolbar) return direct;
+
+    const hintElement = selectionCtx?.hintElement;
+    if (hintElement instanceof HTMLElement) {
+      const matched = this.findProtyleByHintElement(hintElement);
+      if (matched) return matched;
+    }
+
+    const list = this.getAllProtyles();
+    for (const protyle of list) {
+      const el = protyle?.hint?.element;
+      if (el instanceof HTMLElement && el.isConnected && !el.classList.contains("fn__none")) return protyle;
+    }
+    return null;
+  }
+
+  captureSelectionContext(btn = null) {
+    const ctx = {
+      range: null,
+      hintElement: null,
+      protyle: null,
+      hintLastIndex: -1,
+      hintSplitChar: "",
+    };
+
+    try {
+      const sel = document.getSelection();
+      if (sel && sel.rangeCount) {
+        ctx.range = sel.getRangeAt(0).cloneRange();
+      }
+    } catch {
+      // keep best-effort context
+    }
+
+    const hintElement = btn instanceof HTMLElement ? btn.closest(".protyle-hint, .hint--menu") : null;
+    if (hintElement instanceof HTMLElement) {
+      ctx.hintElement = hintElement;
+      const protyle = this.findProtyleByHintElement(hintElement);
+      if (protyle) {
+        ctx.protyle = protyle;
+        try {
+          if (protyle?.toolbar?.range) {
+            ctx.range = protyle.toolbar.range.cloneRange();
+          }
+        } catch {
+          // ignore
+        }
+        const lastIndex = Number(protyle?.hint?.lastIndex);
+        if (Number.isFinite(lastIndex)) ctx.hintLastIndex = Math.trunc(lastIndex);
+        ctx.hintSplitChar = s(protyle?.hint?.splitChar).trim();
+      }
+    }
+
+    if (!(ctx.range instanceof Range)) {
+      if (ctx.protyle || ctx.hintElement) return ctx;
+      return null;
+    }
+    return ctx;
+  }
+
+  restoreSelectionRange(range) {
+    if (!(range instanceof Range)) return false;
+    try {
+      const sel = document.getSelection();
+      if (!sel) return false;
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  restoreSelectionContext(ctx) {
+    return this.restoreSelectionRange(ctx?.range);
+  }
+
+  focusProtyle(protyle) {
+    try {
+      const inst = typeof protyle?.getInstance === "function" ? protyle.getInstance() : null;
+      if (inst && typeof inst.focus === "function") {
+        inst.focus();
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const el = protyle?.wysiwyg?.element;
+      if (el instanceof HTMLElement && typeof el.focus === "function") {
+        el.focus();
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+
+  ensureHintLeadingSpace(protyle, hintKeyword, hintStartIndex = -1) {
+    const range = protyle?.toolbar?.range;
+    const hint = protyle?.hint;
+    if (!(range instanceof Range) || !(hint instanceof Object)) return;
+    if (!(range.startContainer instanceof Text) || range.startContainer !== range.endContainer) return;
+
+    const node = range.startContainer;
+    const text = s(node.textContent);
+    if (!text) return;
+
+    let start = Number.isFinite(hintStartIndex) ? Math.trunc(hintStartIndex) : Number(hint.lastIndex);
+    if (!Number.isFinite(start) || start < 0) return;
+    start = Math.max(0, Math.min(text.length, start));
+
+    const kw = s(hintKeyword).trim();
+    if (kw) {
+      const token = `:${kw}`;
+      const cursor = Math.max(0, Math.min(text.length, Number(range.endOffset) || 0));
+      const left = text.slice(0, cursor);
+      const found = left.lastIndexOf(token);
+      if (found >= 0) start = found;
+    }
+
+    if (start <= 0 || /\s/.test(text[start - 1])) {
+      hint.lastIndex = start;
+      return;
+    }
+
+    const oldStart = Number(range.startOffset) || 0;
+    const oldEnd = Number(range.endOffset) || 0;
+    const nextText = `${text.slice(0, start)} ${text.slice(start)}`;
+    node.textContent = nextText;
+
+    const shift = (offset) => {
+      const n = Number(offset) || 0;
+      return n >= start ? n + 1 : n;
+    };
+    range.setStart(node, Math.max(0, Math.min(nextText.length, shift(oldStart))));
+    range.setEnd(node, Math.max(0, Math.min(nextText.length, shift(oldEnd))));
+    hint.lastIndex = start + 1;
+  }
+
+  applyHintFill(unicodePath, selectionCtx = null, hintKeyword = "") {
+    const target = s(unicodePath).trim();
+    if (!target) return false;
+
+    const protyle = this.resolveHintProtyle(selectionCtx);
+    const hint = protyle?.hint;
+    if (!protyle || !hint || typeof hint.fill !== "function" || !protyle?.toolbar) return false;
+
+    let range = null;
+    try {
+      if (selectionCtx?.range instanceof Range) {
+        range = selectionCtx.range.cloneRange();
+      } else if (protyle.toolbar.range instanceof Range) {
+        range = protyle.toolbar.range.cloneRange();
+      }
+    } catch {
+      range = null;
+    }
+    if (!(range instanceof Range)) return false;
+
+    this.focusProtyle(protyle);
+    protyle.toolbar.range = range;
+    this.restoreSelectionRange(range);
+
+    const splitChar = s(selectionCtx?.hintSplitChar || hint.splitChar).trim() || ":";
+    const lastIndexRaw = Number(selectionCtx?.hintLastIndex);
+    const lastIndex = Number.isFinite(lastIndexRaw) ? Math.trunc(lastIndexRaw) : Number(hint.lastIndex);
+
+    hint.splitChar = splitChar;
+    if (Number.isFinite(lastIndex) && lastIndex >= 0) hint.lastIndex = lastIndex;
+
+    this.ensureHintLeadingSpace(protyle, hintKeyword, hint.lastIndex);
+    this.focusProtyle(protyle);
+    this.restoreSelectionRange(protyle.toolbar.range);
+
+    try {
+      hint.fill(target, protyle, true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async applyImportedSelection(btn, source, icon, unicodePath, selectionCtx = null, hintKeyword = "", isHintMode = false) {
+    if (isHintMode) {
+      const filled = this.applyHintFill(unicodePath, selectionCtx, hintKeyword);
+      if (filled) return true;
+    }
+
     const liveBtn = this.resolveLiveResultButton(btn, source, icon);
     if (liveBtn) {
       this.prepareNativeEmojiButton(liveBtn, unicodePath);
@@ -1682,7 +2029,7 @@ class EmojiMarketPlugin extends Plugin {
   findNativeEmojiButton(unicodePath) {
     const target = s(unicodePath).trim();
     if (!target) return null;
-    const nodes = document.querySelectorAll(".emojis__item[data-unicode]");
+    const nodes = document.querySelectorAll('.emojis__item[data-unicode]:not([data-if-market="1"])');
     for (const node of nodes) {
       if (!(node instanceof HTMLElement)) continue;
       if (s(node.getAttribute("data-unicode")).trim() === target) return node;
@@ -2238,6 +2585,10 @@ class EmojiMarketPlugin extends Plugin {
       const doc = parser.parseFromString(text, "image/svg+xml");
       const svg = doc.documentElement;
       if (!svg || svg.nodeName.toLowerCase() !== "svg") return null;
+      svg.setAttribute("width", "100%");
+      svg.setAttribute("height", "100%");
+      svg.style.display = "block";
+      svg.style.pointerEvents = "none";
       return document.importNode(svg, true);
     } catch {
       return null;
