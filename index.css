@@ -191,11 +191,56 @@
   max-height: min(84vh, 760px);
   display: flex;
   flex-direction: column;
+  position: relative;
   overflow: hidden;
   background: var(--b3-theme-surface);
   color: var(--b3-theme-on-surface);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.if-market-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--b3-theme-on-surface-light);
+  padding: 0;
+  cursor: pointer;
+}
+
+.if-market-nav-btn svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.if-market-nav-btn--prev {
+  left: 6px;
+}
+
+.if-market-nav-btn--next {
+  right: 6px;
+}
+
+.if-market-nav-btn:not(:disabled):hover {
+  color: var(--b3-theme-primary);
+}
+
+.if-market-nav-btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
 }
 
 /* 鈹€鈹€ Dialog body 鈹€鈹€ */
@@ -614,6 +659,20 @@
   .if-iconfont-name,
   .if-market-name {
     font-size: 16px;
+  }
+
+  .if-market-nav-btn {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+  }
+
+  .if-market-nav-btn--prev {
+    left: 4px;
+  }
+
+  .if-market-nav-btn--next {
+    right: 4px;
   }
 }
 

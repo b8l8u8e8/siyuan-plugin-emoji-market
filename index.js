@@ -696,6 +696,7 @@ class EmojiMarketPlugin extends Plugin {
     btn.dataset.ifIconId = s(icon?.id);
     btn.dataset.ifReady = "0";
     btn.dataset.ifSaving = "0";
+    btn.__ifMarketIcon = icon;
 
     const preview = this.safeSvgElement(icon?.previewSvg);
     if (preview) btn.appendChild(preview);
@@ -721,6 +722,54 @@ class EmojiMarketPlugin extends Plugin {
     return btn;
   }
 
+  collectSiblingPickItems(btn, source, icon) {
+    const fallbackBtn = btn instanceof HTMLElement ? btn : null;
+    const fallback = [{btn: fallbackBtn, source, icon}];
+
+    if (!(btn instanceof HTMLElement)) return {items: fallback, index: 0};
+
+    const group = btn.closest(".emojis__content");
+    if (!(group instanceof HTMLElement)) return {items: fallback, index: 0};
+
+    const nodes = Array.from(group.querySelectorAll('.emojis__item[data-if-market="1"]'));
+    const items = [];
+    nodes.forEach((node) => {
+      if (!(node instanceof HTMLElement)) return;
+      const providerId = s(node.dataset.ifProvider).trim();
+      const mappedSource = SOURCE_MAP[providerId] || source;
+
+      let mappedIcon = node.__ifMarketIcon;
+      if (!mappedIcon || typeof mappedIcon !== "object") {
+        const id = s(node.dataset.ifIconId).trim();
+        if (!id) return;
+        mappedIcon = {
+          id,
+          name: s(node.getAttribute("aria-label"), "icon"),
+          previewSvg: s(node.innerHTML),
+        };
+      }
+
+      items.push({btn: node, source: mappedSource, icon: mappedIcon});
+    });
+
+    if (!items.length) return {items: fallback, index: 0};
+
+    let index = items.findIndex((x) => x.btn === btn);
+    if (index < 0) {
+      const provider = s(source?.id || btn.dataset.ifProvider).trim();
+      const iconId = s(icon?.id !== undefined && icon?.id !== null ? String(icon.id) : btn.dataset.ifIconId).trim();
+      if (provider && iconId) {
+        index = items.findIndex((x) => {
+          if (!(x.btn instanceof HTMLElement)) return false;
+          return s(x.btn.dataset.ifProvider).trim() === provider && s(x.btn.dataset.ifIconId).trim() === iconId;
+        });
+      }
+    }
+
+    if (index < 0) index = 0;
+    return {items, index};
+  }
+
   /* 鈹€鈹€ Pick & import (FIX #3: auto-select after import) 鈹€鈹€ */
 
   async onPick(btn, source, icon) {
@@ -731,11 +780,29 @@ class EmojiMarketPlugin extends Plugin {
     try {
       const kw = s(btn.dataset.ifKeyword).trim();
       const selectionCtx = this.captureSelectionContext(btn);
-      const detail = await this.getDetail(source, icon);
-      const decision = await this.showImportDialog(source, icon, detail, kw);
+      const pickGroup = this.collectSiblingPickItems(btn, source, icon);
+      const items = Array.isArray(pickGroup.items) && pickGroup.items.length
+        ? pickGroup.items
+        : [{btn, source, icon}];
+      const idx = Number.isFinite(pickGroup.index) ? Math.max(0, Math.min(items.length - 1, Math.trunc(pickGroup.index))) : 0;
+      const first = items[idx] || {};
+      const firstBtn = first.btn instanceof HTMLElement ? first.btn : btn;
+      const firstSource = first.source || source;
+      const firstIcon = first.icon || icon;
+      const firstDetail = await this.getDetail(firstSource, firstIcon);
+
+      const decision = await this.showImportDialog(firstSource, firstIcon, firstDetail, kw, {
+        items,
+        index: idx,
+      });
       if (!decision?.confirmed) return;
 
-      const saved = await this.saveToEmojiStore(source, icon, detail, {
+      const finalBtn = decision.btn instanceof HTMLElement ? decision.btn : firstBtn;
+      const finalSource = decision.source || firstSource;
+      const finalIcon = decision.icon || firstIcon;
+      const finalDetail = decision.detail || firstDetail;
+
+      const saved = await this.saveToEmojiStore(finalSource, finalIcon, finalDetail, {
         keyword: kw,
         selectedColor: decision.selectedColor,
         keepOriginalColor: decision.keepOriginalColor,
@@ -743,13 +810,13 @@ class EmojiMarketPlugin extends Plugin {
       await this.refreshRuntimeEmojiCache(saved.unicodePath);
 
       await this.applyImportedSelection(
-        btn,
-        source,
-        icon,
+        finalBtn,
+        finalSource,
+        finalIcon,
         saved.unicodePath,
         selectionCtx,
         kw,
-        !!btn.closest(".protyle-hint, .hint--menu")
+        !!finalBtn.closest(".protyle-hint, .hint--menu")
       );
     } catch (err) {
       const msg = this.t("downloadFailed", {source: source.name, msg: safeMsg(err)});
@@ -1026,22 +1093,25 @@ class EmojiMarketPlugin extends Plugin {
     const root = doc.querySelector(".main-detail") || doc.body || doc;
 
     const spans = Array.from(root.querySelectorAll("span"));
-    const authorSpan = spans.find((x) => /^作者[:：]/.test(n(x.textContent)));
-    const licSpan = spans.find((x) => /^协议[:：]/.test(n(x.textContent)));
+    const authorSpan = spans.find((x) => /^(?:\u4f5c\u8005|author)\s*[:\uFF1A]/i.test(n(x.textContent)));
+    const licSpan = spans.find((x) => /^(?:\u534f\u8bae|license)\s*[:\uFF1A]/i.test(n(x.textContent)));
     const authorLink = authorSpan?.querySelector("a[href]");
     const licLink = licSpan?.querySelector("a[href]");
 
     const usageLines = [];
     let usageLinkUrl = "";
 
-    const usageLabel = Array.from(root.querySelectorAll("p")).find((p) => n(p.textContent).startsWith("使用许可"));
+    const usageLabel = Array.from(root.querySelectorAll("p")).find((p) => {
+      const txt = n(p.textContent);
+      return txt.startsWith("\u4f7f\u7528\u8bb8\u53ef") || txt.toLowerCase().startsWith("license");
+    });
     const usageContainer = usageLabel?.parentElement || null;
 
     if (usageContainer) {
       Array.from(usageContainer.querySelectorAll("p.mt-1.text-gray-400")).forEach((p) => {
         const line = n(p.textContent);
         if (!line) return;
-        if (/^(大小|宽度|颜色)[:：]/.test(line)) return;
+        if (/^(?:\u5927\u5c0f|\u5bbd\u5ea6|\u989c\u8272|size|width|color)\s*[:\uFF1A]/i.test(line)) return;
         usageLines.push(line);
       });
 
@@ -1055,8 +1125,8 @@ class EmojiMarketPlugin extends Plugin {
       root.querySelectorAll("p,li").forEach((node) => {
         const line = n(node.textContent);
         if (!line) return;
-        if (/^(大小|宽度|颜色)[:：]/.test(line)) return;
-        if (/(商用使用范围|修改与衍生|归属权|使用许可)/.test(line)) {
+        if (/^(?:\u5927\u5c0f|\u5bbd\u5ea6|\u989c\u8272|size|width|color)\s*[:\uFF1A]/i.test(line)) return;
+        if (/(?:\u5546\u7528|\u6388\u6743|\u8bb8\u53ef|copyright|license|commercial)/i.test(line)) {
           usageLines.push(line);
         }
       });
@@ -1090,9 +1160,9 @@ class EmojiMarketPlugin extends Plugin {
 
     return {
       title: cleanTitleText(root.querySelector("h1")?.textContent || icon?.name || this.t("unnamed")),
-      author: n(s(authorLink?.textContent) || s(authorSpan?.textContent).replace(/^作者[:：]\s*/, "")) || this.t("unknownAuthor"),
+      author: n(s(authorLink?.textContent) || s(authorSpan?.textContent).replace(/^.*[:\uFF1A]\s*/, "")) || this.t("unknownAuthor"),
       authorUrl: this.toAbs(SOURCE_MAP.cainiao, authorLink?.getAttribute("href") || ""),
-      license: n(s(licLink?.textContent) || s(licSpan?.textContent).replace(/^协议[:：]\s*/, "")) || this.t("unlabeled"),
+      license: n(s(licLink?.textContent) || s(licSpan?.textContent).replace(/^.*[:\uFF1A]\s*/, "")) || this.t("unlabeled"),
       licenseUrl: this.toAbs(SOURCE_MAP.cainiao, licLink?.getAttribute("href") || ""),
       usageLines: usageDedup,
       usageLinkUrl: usageLinkUrl || fallbackUsageLink,
@@ -1105,7 +1175,7 @@ class EmojiMarketPlugin extends Plugin {
 
   extractUsage(raw) {
     if (Array.isArray(raw)) return raw.map((x) => n(x)).filter(Boolean);
-    return String(raw || "").split(/[\r\n;,，]+/).map((x) => n(x)).filter(Boolean);
+    return String(raw || "").split(/[\r\n;,\uFF0C]+/).map((x) => n(x)).filter(Boolean);
   }
 
   extractColors(...texts) {
@@ -1148,15 +1218,24 @@ class EmojiMarketPlugin extends Plugin {
 
   /* 鈹€鈹€ Import dialog (FIX #2: avatar with referrerpolicy + error fallback) 鈹€鈹€ */
 
-  showImportDialog(source, icon, detail, keyword) {
-    if (this.dialogPromise) return this.dialogPromise;
-    this.removeDialog();
 
+  /* 鈹€鈹€ Import dialog (FIX #2: avatar with referrerpolicy + error fallback) 鈹€鈹€ */
+
+  buildImportDialogPanelHtml(source, icon, detail, keyword, navState = null) {
     const iconName = this.escapeHtml(cleanTitleText(detail?.title || icon?.name || this.t("unnamed")));
     const iconId = this.escapeHtml(s(icon?.id, "-"));
     const kw = this.escapeHtml(s(keyword));
-    const sourceOrigin = this.escapeHtml(source.origin);
-    const sourceName = this.escapeHtml(source.name);
+    const sourceOrigin = this.escapeHtml(s(source?.origin));
+    const sourceName = this.escapeHtml(s(source?.name));
+    const canPrev = !!(navState && navState.hasPrev);
+    const canNext = !!(navState && navState.hasNext);
+
+    const prevSvg = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5L8 12L15 19"/></svg>`;
+    const nextSvg = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5L16 12L9 19"/></svg>`;
+    const navHtml = `
+        <button type="button" class="if-market-nav-btn if-market-nav-btn--prev" data-role="nav-prev" aria-label="Previous icon"${canPrev ? "" : " disabled"}>${prevSvg}</button>
+        <button type="button" class="if-market-nav-btn if-market-nav-btn--next" data-role="nav-next" aria-label="Next icon"${canNext ? "" : " disabled"}>${nextSvg}</button>
+      `;
 
     const authorText = this.escapeHtml(s(detail?.author, this.t("unknownAuthor")));
     const authorUrl = s(detail?.authorUrl);
@@ -1170,7 +1249,7 @@ class EmojiMarketPlugin extends Plugin {
       ? `<a href="${this.escapeHtml(licUrl)}" target="_blank" rel="noreferrer">${licText}</a>`
       : licText;
 
-    const isIconfont = source.id === "iconfont";
+    const isIconfont = s(source?.id) === "iconfont";
 
     const usageLines = Array.isArray(detail?.usageLines)
       ? detail.usageLines.map((x) => n(x)).filter(Boolean)
@@ -1230,9 +1309,10 @@ class EmojiMarketPlugin extends Plugin {
           ? `<a href="${this.escapeHtml(ICONFONT_COPYRIGHT_TERMS_URL)}" target="_blank" rel="noreferrer">${this.escapeHtml(this.t("copyrightInfo"))}</a>`
           : "");
 
-    const html = isIconfont
+    return isIconfont
       ? `
       <div class="if-market-consent-panel if-market-dialog--iconfont" role="dialog" aria-modal="true">
+        ${navHtml}
         <div class="if-market-consent-body">
           <div class="if-iconfont-head">
             <div class="if-iconfont-headline">
@@ -1290,6 +1370,7 @@ class EmojiMarketPlugin extends Plugin {
       `
       : `
       <div class="if-market-consent-panel if-market-dialog--compact" role="dialog" aria-modal="true">
+        ${navHtml}
         <div class="if-market-consent-body">
           <div class="if-market-headline">
             <h2 class="if-market-name">${iconName}</h2>
@@ -1339,12 +1420,36 @@ class EmojiMarketPlugin extends Plugin {
         </div>
       </div>
       `;
+  }
+
+  showImportDialog(source, icon, detail, keyword, navState = null) {
+    if (this.dialogPromise) return this.dialogPromise;
+    this.removeDialog();
+
+    const navItems = Array.isArray(navState?.items) && navState.items.length ? navState.items : null;
+    let currentIndex = navItems ? Math.max(0, Math.min(navItems.length - 1, parseIntSafe(navState?.index, 0))) : 0;
+    const resolveCurrent = () => {
+      const x = navItems ? (navItems[currentIndex] || {}) : {};
+      return {
+        btn: x.btn instanceof HTMLElement ? x.btn : null,
+        source: x.source || source,
+        icon: x.icon || icon,
+      };
+    };
+
+    let current = resolveCurrent();
+    let currentBtn = current.btn;
+    let currentSource = current.source;
+    let currentIcon = current.icon;
+    let currentDetail = detail;
 
     this.dialogPromise = new Promise((resolve) => {
       this.dialogResolve = resolve;
       let done = false;
       let consentWarnTimer = 0;
       let dialog = null;
+      let navigating = false;
+      let navToken = 0;
 
       const cleanup = () => {
         if (consentWarnTimer) {
@@ -1365,204 +1470,280 @@ class EmojiMarketPlugin extends Plugin {
         if (r) r(payload);
       };
 
+      const canceledPayload = () => ({
+        confirmed: false,
+        keepOriginalColor: true,
+        selectedColor: "",
+        source: currentSource,
+        icon: currentIcon,
+        detail: currentDetail,
+        btn: currentBtn,
+      });
+
       const dialogOpts = {
         title: "",
-        content: html,
+        content: `<div class="if-market-dialog-stage" data-role="dialog-stage"></div>`,
         width: "min(920px, 92vw)",
         containerClassName: "if-market-import-container",
         destroyCallback: () => {
           if (this.importDialog === dialog) this.importDialog = null;
-          settle({confirmed: false, keepOriginalColor: true, selectedColor: ""});
+          settle(canceledPayload());
         },
       };
       dialog = new Dialog(dialogOpts);
       this.importDialog = dialog;
 
-      const root = dialog.element?.querySelector?.(".if-market-consent-panel");
-      if (!(root instanceof HTMLElement)) {
-        settle({confirmed: false, keepOriginalColor: true, selectedColor: ""});
+      const stage = dialog.element?.querySelector?.('[data-role="dialog-stage"]');
+      if (!(stage instanceof HTMLElement)) {
+        settle(canceledPayload());
         dialog.destroy();
         return;
       }
 
-      const avatarImg = root.querySelector("img.if-iconfont-avatar");
-      const avatarPlaceholder = root.querySelector(".if-iconfont-avatar--placeholder");
-      if (avatarImg instanceof HTMLImageElement) {
-        const origAvatarUrl = avatarUrl;
-        let triedFallback = false;
+      const mountPanel = () => {
+        if (done) return;
+        if (consentWarnTimer) {
+          clearTimeout(consentWarnTimer);
+          consentWarnTimer = 0;
+        }
 
-        const showLoading = () => {
-          avatarImg.style.display = "none";
-          if (avatarPlaceholder instanceof HTMLElement) {
-            avatarPlaceholder.style.display = "";
-            avatarPlaceholder.classList.add("if-iconfont-avatar--loading");
-            avatarPlaceholder.textContent = "";
-          }
-        };
+        const hasPrev = !!navItems && currentIndex > 0;
+        const hasNext = !!navItems && currentIndex < navItems.length - 1;
+        stage.innerHTML = this.buildImportDialogPanelHtml(currentSource, currentIcon, currentDetail, keyword, {hasPrev, hasNext});
 
-        const showReady = () => {
-          avatarImg.style.display = "";
-          if (avatarPlaceholder instanceof HTMLElement) {
-            avatarPlaceholder.style.display = "none";
-            avatarPlaceholder.classList.remove("if-iconfont-avatar--loading");
-            avatarPlaceholder.textContent = "?";
-          }
-        };
+        const root = stage.querySelector(".if-market-consent-panel");
+        if (!(root instanceof HTMLElement)) return;
 
-        const showFallback = () => {
-          avatarImg.style.display = "none";
-          if (avatarPlaceholder instanceof HTMLElement) {
-            avatarPlaceholder.style.display = "";
-            avatarPlaceholder.classList.remove("if-iconfont-avatar--loading");
-            avatarPlaceholder.textContent = "?";
-          }
-        };
+        const avatarUrl = httpsUrl(s(currentDetail?.avatarUrl));
+        const avatarImg = root.querySelector("img.if-iconfont-avatar");
+        const avatarPlaceholder = root.querySelector(".if-iconfont-avatar--placeholder");
+        if (avatarImg instanceof HTMLImageElement) {
+          const origAvatarUrl = avatarUrl;
+          let triedFallback = false;
 
-        const fetchFallback = () => {
-          if (!origAvatarUrl || triedFallback) {
-            showFallback();
-            return;
-          }
-          triedFallback = true;
+          const showLoading = () => {
+            avatarImg.style.display = "none";
+            if (avatarPlaceholder instanceof HTMLElement) {
+              avatarPlaceholder.style.display = "";
+              avatarPlaceholder.classList.add("if-iconfont-avatar--loading");
+              avatarPlaceholder.textContent = "";
+            }
+          };
+
+          const showReady = () => {
+            avatarImg.style.display = "";
+            if (avatarPlaceholder instanceof HTMLElement) {
+              avatarPlaceholder.style.display = "none";
+              avatarPlaceholder.classList.remove("if-iconfont-avatar--loading");
+              avatarPlaceholder.textContent = "?";
+            }
+          };
+
+          const showFallback = () => {
+            avatarImg.style.display = "none";
+            if (avatarPlaceholder instanceof HTMLElement) {
+              avatarPlaceholder.style.display = "";
+              avatarPlaceholder.classList.remove("if-iconfont-avatar--loading");
+              avatarPlaceholder.textContent = "?";
+            }
+          };
+
+          const fetchFallback = () => {
+            if (!origAvatarUrl || triedFallback) {
+              showFallback();
+              return;
+            }
+            triedFallback = true;
+            showLoading();
+            this.fetchAvatarDataUrl(origAvatarUrl).then((dataUrl) => {
+              avatarImg.src = dataUrl;
+            }).catch(() => {
+              showFallback();
+            });
+          };
+
           showLoading();
-          this.fetchAvatarDataUrl(origAvatarUrl).then((dataUrl) => {
-            avatarImg.src = dataUrl;
-          }).catch(() => {
-            showFallback();
+          avatarImg.addEventListener("load", showReady);
+          avatarImg.addEventListener("error", fetchFallback);
+
+          if (avatarImg.complete) {
+            if (avatarImg.naturalWidth > 0) showReady();
+            else fetchFallback();
+          }
+        }
+
+        const agree = root.querySelector('[data-role="agree"]');
+        const keep = root.querySelector('[data-role="keep-original"]');
+        const color = root.querySelector('[data-role="color-picker"]');
+        const sw = root.querySelector('[data-role="swatches"]');
+        const ok = root.querySelector('[data-role="confirm"]');
+        const host = root.querySelector('[data-role="preview"]');
+        const navPrev = root.querySelector('[data-role="nav-prev"]');
+        const navNext = root.querySelector('[data-role="nav-next"]');
+        const consentCheck = root.querySelector(".if-market-consent-check");
+        const baseSvg = s(currentDetail?.svg || currentIcon?.previewSvg);
+
+        const syncSwatch = () => {
+          if (!(sw instanceof HTMLElement) || !(color instanceof HTMLInputElement)) return;
+          const cur = normalizeHex(color.value).toLowerCase();
+          sw.querySelectorAll("[data-color]").forEach((el) => {
+            const c = normalizeHex(el.getAttribute("data-color")).toLowerCase();
+            el.classList.toggle("is-active", !!cur && cur === c);
           });
         };
 
-        showLoading();
-        avatarImg.addEventListener("load", showReady);
-        avatarImg.addEventListener("error", fetchFallback);
+        const render = () => {
+          if (!(host instanceof HTMLElement)) return;
+          host.innerHTML = "";
 
-        if (avatarImg.complete) {
-          if (avatarImg.naturalWidth > 0) showReady();
-          else fetchFallback();
-        }
-      }
+          const keepOriginal = !!keep?.checked;
+          const pick = s(color?.value, FALLBACK_COLOR);
+          const text = keepOriginal ? baseSvg : this.applyColor(baseSvg, pick);
 
-      const agree = root.querySelector('[data-role="agree"]');
-      const keep = root.querySelector('[data-role="keep-original"]');
-      const color = root.querySelector('[data-role="color-picker"]');
-      const sw = root.querySelector('[data-role="swatches"]');
-      const ok = root.querySelector('[data-role="confirm"]');
-      const host = root.querySelector('[data-role="preview"]');
-      const consentCheck = root.querySelector(".if-market-consent-check");
-      const baseSvg = s(detail?.svg || icon?.previewSvg);
-
-      const syncSwatch = () => {
-        if (!(sw instanceof HTMLElement) || !(color instanceof HTMLInputElement)) return;
-        const cur = normalizeHex(color.value).toLowerCase();
-        sw.querySelectorAll("[data-color]").forEach((el) => {
-          const c = normalizeHex(el.getAttribute("data-color")).toLowerCase();
-          el.classList.toggle("is-active", !!cur && cur === c);
-        });
-      };
-
-      const render = () => {
-        if (!(host instanceof HTMLElement)) return;
-        host.innerHTML = "";
-
-        const keepOriginal = !!keep?.checked;
-        const pick = s(color?.value, FALLBACK_COLOR);
-        const text = keepOriginal ? baseSvg : this.applyColor(baseSvg, pick);
-
-        const svg = this.safeSvgElement(text);
-        if (!svg) {
-          host.textContent = this.t("previewUnavailable");
-          return;
-        }
-
-        const w = parseFloat(s(svg.getAttribute("width")));
-        const h = parseFloat(s(svg.getAttribute("height")));
-        if (!svg.hasAttribute("viewBox") && Number.isFinite(w) && Number.isFinite(h)) {
-          svg.setAttribute("viewBox", `0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`);
-        }
-
-        svg.removeAttribute("width");
-        svg.removeAttribute("height");
-        svg.removeAttribute("style");
-        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-        svg.style.position = "static";
-        svg.style.width = "72%";
-        svg.style.height = "72%";
-        svg.style.maxWidth = "72%";
-        svg.style.maxHeight = "72%";
-
-        host.appendChild(svg);
-        syncSwatch();
-      };
-
-      const notifyConsentRequired = () => {
-        const msg = this.t("consentRequired");
-        if (typeof showMessage === "function") showMessage(msg, 2500);
-        else console.warn(msg);
-
-        if (consentCheck instanceof HTMLElement) {
-          consentCheck.classList.remove("if-market-consent-check--warn");
-          void consentCheck.offsetWidth;
-          consentCheck.classList.add("if-market-consent-check--warn");
-          if (consentWarnTimer) clearTimeout(consentWarnTimer);
-          consentWarnTimer = window.setTimeout(() => {
-            if (consentCheck instanceof HTMLElement) consentCheck.classList.remove("if-market-consent-check--warn");
-            consentWarnTimer = 0;
-          }, 900);
-        }
-
-        if (agree instanceof HTMLElement) agree.focus();
-      };
-
-      const finalize = (confirmed) => {
-        const keepOriginal = !!keep?.checked;
-        settle({
-          confirmed: !!confirmed,
-          keepOriginalColor: keepOriginal,
-          selectedColor: keepOriginal ? "" : s(color?.value, FALLBACK_COLOR),
-        });
-        if (this.importDialog === dialog) this.importDialog = null;
-        dialog.destroy();
-      };
-
-      agree?.addEventListener("change", () => {
-        if (agree?.checked && consentCheck instanceof HTMLElement) {
-          consentCheck.classList.remove("if-market-consent-check--warn");
-        }
-      });
-      keep?.addEventListener("change", () => {
-        if (color) color.disabled = !!keep.checked;
-        render();
-      });
-      color?.addEventListener("input", render);
-
-      if (sw instanceof HTMLElement) {
-        sw.addEventListener("click", (e) => {
-          const el = e.target?.closest?.("[data-color]");
-          if (!(el instanceof HTMLElement)) return;
-          const hex = normalizeHex(el.getAttribute("data-color"));
-          if (!hex) return;
-          if (keep) keep.checked = false;
-          if (color instanceof HTMLInputElement) {
-            color.disabled = false;
-            color.value = hex;
+          const svg = this.safeSvgElement(text);
+          if (!svg) {
+            host.textContent = this.t("previewUnavailable");
+            return;
           }
+
+          const w = parseFloat(s(svg.getAttribute("width")));
+          const h = parseFloat(s(svg.getAttribute("height")));
+          if (!svg.hasAttribute("viewBox") && Number.isFinite(w) && Number.isFinite(h)) {
+            svg.setAttribute("viewBox", `0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`);
+          }
+
+          svg.removeAttribute("width");
+          svg.removeAttribute("height");
+          svg.removeAttribute("style");
+          svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+          svg.style.position = "static";
+          svg.style.width = "72%";
+          svg.style.height = "72%";
+          svg.style.maxWidth = "72%";
+          svg.style.maxHeight = "72%";
+
+          host.appendChild(svg);
+          syncSwatch();
+        };
+
+        const notifyConsentRequired = () => {
+          const msg = this.t("consentRequired");
+          if (typeof showMessage === "function") showMessage(msg, 2500);
+          else console.warn(msg);
+
+          if (consentCheck instanceof HTMLElement) {
+            consentCheck.classList.remove("if-market-consent-check--warn");
+            void consentCheck.offsetWidth;
+            consentCheck.classList.add("if-market-consent-check--warn");
+            if (consentWarnTimer) clearTimeout(consentWarnTimer);
+            consentWarnTimer = window.setTimeout(() => {
+              if (consentCheck instanceof HTMLElement) consentCheck.classList.remove("if-market-consent-check--warn");
+              consentWarnTimer = 0;
+            }, 900);
+          }
+
+          if (agree instanceof HTMLElement) agree.focus();
+        };
+
+        const finalize = (confirmed) => {
+          const keepOriginal = !!keep?.checked;
+          settle({
+            confirmed: !!confirmed,
+            keepOriginalColor: keepOriginal,
+            selectedColor: keepOriginal ? "" : s(color?.value, FALLBACK_COLOR),
+            source: currentSource,
+            icon: currentIcon,
+            detail: currentDetail,
+            btn: currentBtn,
+          });
+          if (this.importDialog === dialog) this.importDialog = null;
+          dialog.destroy();
+        };
+
+        const navigate = (step) => {
+          if (!navItems || (step !== -1 && step !== 1) || navigating) return;
+          const nextIndex = currentIndex + step;
+          if (nextIndex < 0 || nextIndex >= navItems.length) return;
+
+          navigating = true;
+          navToken += 1;
+          const token = navToken;
+
+          if (navPrev instanceof HTMLButtonElement) navPrev.disabled = true;
+          if (navNext instanceof HTMLButtonElement) navNext.disabled = true;
+          if (ok instanceof HTMLButtonElement) ok.disabled = true;
+
+          const next = navItems[nextIndex] || {};
+          const nextBtn = next.btn instanceof HTMLElement ? next.btn : null;
+          const nextSource = next.source || source;
+          const nextIcon = next.icon || icon;
+
+          this.getDetail(nextSource, nextIcon).then((nextDetail) => {
+            if (done || token !== navToken) return;
+            currentIndex = nextIndex;
+            currentBtn = nextBtn;
+            currentSource = nextSource;
+            currentIcon = nextIcon;
+            currentDetail = nextDetail;
+            mountPanel();
+          }).catch((err) => {
+            if (done || token !== navToken) return;
+            const msg = this.t("downloadFailed", {source: s(nextSource?.name, this.t("storeTitle")), msg: safeMsg(err)});
+            if (typeof showMessage === "function") showMessage(msg, 3000, "error");
+            else console.error(msg);
+            if (navPrev instanceof HTMLButtonElement) navPrev.disabled = false;
+            if (navNext instanceof HTMLButtonElement) navNext.disabled = false;
+            if (ok instanceof HTMLButtonElement) ok.disabled = false;
+          }).finally(() => {
+            if (token === navToken) navigating = false;
+          });
+        };
+
+        agree?.addEventListener("change", () => {
+          if (agree?.checked && consentCheck instanceof HTMLElement) {
+            consentCheck.classList.remove("if-market-consent-check--warn");
+          }
+        });
+        keep?.addEventListener("change", () => {
+          if (color) color.disabled = !!keep.checked;
           render();
         });
-      }
+        color?.addEventListener("input", render);
 
-      ok?.addEventListener("click", () => {
-        if (!agree?.checked) {
-          notifyConsentRequired();
-          return;
+        if (sw instanceof HTMLElement) {
+          sw.addEventListener("click", (e) => {
+            const el = e.target?.closest?.("[data-color]");
+            if (!(el instanceof HTMLElement)) return;
+            const hex = normalizeHex(el.getAttribute("data-color"));
+            if (!hex) return;
+            if (keep) keep.checked = false;
+            if (color instanceof HTMLInputElement) {
+              color.disabled = false;
+              color.value = hex;
+            }
+            render();
+          });
         }
-        finalize(true);
-      });
 
-      render();
+        ok?.addEventListener("click", () => {
+          if (!agree?.checked) {
+            notifyConsentRequired();
+            return;
+          }
+          finalize(true);
+        });
+        navPrev?.addEventListener("click", () => navigate(-1));
+        navNext?.addEventListener("click", () => navigate(1));
+
+        render();
+      };
+
+      mountPanel();
     });
 
     return this.dialogPromise;
   }
+
   removeDialog() {
     if (typeof this.dialogCleanup === "function") {
       this.dialogCleanup();
@@ -2606,4 +2787,6 @@ class EmojiMarketPlugin extends Plugin {
 }
 
 module.exports = EmojiMarketPlugin;
+
+
 
