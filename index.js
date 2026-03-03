@@ -22,6 +22,9 @@ const STORAGE_SETTINGS = "settings";
 const DEFAULT_MAX_PER_SOURCE = 30;
 const MIN_MAX_PER_SOURCE = 1;
 const MAX_MAX_PER_SOURCE = 2000;
+const ICONFONT_PAGE_SIZE = 50;
+const ICONFONT_MAX_PAGES = 80;
+const CAINIAO_MAX_PAGES = 120;
 const SEARCH_TTL = 2 * 60 * 1000;
 const DETAIL_TTL = 10 * 60 * 1000;
 const FALLBACK_COLOR = "#64748b";
@@ -659,10 +662,13 @@ class EmojiMarketPlugin extends Plugin {
   }
 
   renderSourceBlock(source, kw, res) {
+    const items = Array.isArray(res.items) ? res.items.slice(0, this.getMaxPerSource(source.id)) : [];
+    const resultCount = res.error ? 0 : items.length;
+
     const t = document.createElement("div");
     t.className = "emojis__title";
     t.dataset.ifMarket = "1";
-    t.textContent = `${this.t("storeTitle")} - ${source.name}`;
+    t.textContent = `${this.t("storeTitle")} - ${source.name} (${resultCount})`;
 
     const body = document.createElement("div");
     body.className = "emojis__content";
@@ -673,7 +679,6 @@ class EmojiMarketPlugin extends Plugin {
       return [t, body];
     }
 
-    const items = Array.isArray(res.items) ? res.items.slice(0, this.getMaxPerSource(source.id)) : [];
     if (!items.length) {
       body.innerHTML = `<div class="emojis__title if-market-empty" data-if-market="1">${this.escapeHtml(this.t("noResults", {kw}))}</div>`;
       return [t, body];
@@ -852,53 +857,66 @@ class EmojiMarketPlugin extends Plugin {
     const cached = this.searchCache.get(key);
     if (cached && now - cached.at < SEARCH_TTL) return cached.items;
 
-    const params = new URLSearchParams();
-    params.set("q", keyword);
-    params.set("page", "1");
-    params.set("count", String(this.getMaxPerSource("iconfont") * 2));
-    params.set("sortType", "updated_at");
-    params.set("fromCollection", "1");
-
+    const target = this.getMaxPerSource("iconfont");
+    const maxPages = Math.min(ICONFONT_MAX_PAGES, Math.max(1, Math.ceil(target / ICONFONT_PAGE_SIZE)));
     const ref = `${SOURCE_MAP.iconfont.origin}/search/index?searchType=icon&q=${encodeURIComponent(keyword)}`;
-    const json = await this.requestJson(
-      `${SOURCE_MAP.iconfont.origin}/api/icon/search.json?${params.toString()}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          Referer: ref,
-          Origin: SOURCE_MAP.iconfont.origin,
-          "User-Agent": "Mozilla/5.0",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-      },
-      SOURCE_MAP.iconfont.origin
-    );
-
-    if (Number(json?.code) !== 200) throw new Error(s(json?.message, "iconfont search error"));
-
-    const rows = Array.isArray(json?.data?.icons) ? json.data.icons : [];
     const items = [];
     const seen = new Set();
+    let totalAvailable = Number.POSITIVE_INFINITY;
 
-    rows.forEach((row) => {
-      const id = n(row?.id);
-      if (!id || seen.has(id)) return;
+    for (let page = 1; page <= maxPages && items.length < target; page += 1) {
+      const params = new URLSearchParams();
+      params.set("q", keyword);
+      params.set("page", String(page));
+      params.set("count", String(ICONFONT_PAGE_SIZE));
+      params.set("sortType", "updated_at");
+      params.set("fromCollection", "1");
 
-      let previewSvg = s(row?.show_svg).trim();
-      if (!previewSvg) previewSvg = this.buildIconfontSvg(row);
-      if (!previewSvg) return;
+      const json = await this.requestJson(
+        `${SOURCE_MAP.iconfont.origin}/api/icon/search.json?${params.toString()}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            Referer: ref,
+            Origin: SOURCE_MAP.iconfont.origin,
+            "User-Agent": "Mozilla/5.0",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        },
+        SOURCE_MAP.iconfont.origin
+      );
 
-      const name = n(row?.name || row?.slug || row?.font_class || `icon-${id}`);
-      items.push({
-        provider: "iconfont",
-        id,
-        name,
-        previewSvg,
-        detailUrl: `${SOURCE_MAP.iconfont.origin}/icons/detail?icon_id=${encodeURIComponent(id)}`,
+      if (Number(json?.code) !== 200) throw new Error(s(json?.message, "iconfont search error"));
+      const totalCount = parseIntSafe(json?.data?.count, 0);
+      if (totalCount > 0) totalAvailable = totalCount;
+
+      const rows = Array.isArray(json?.data?.icons) ? json.data.icons : [];
+      if (!rows.length) break;
+
+      rows.forEach((row) => {
+        if (items.length >= target) return;
+        const id = n(row?.id);
+        if (!id || seen.has(id)) return;
+
+        let previewSvg = s(row?.show_svg).trim();
+        if (!previewSvg) previewSvg = this.buildIconfontSvg(row);
+        if (!previewSvg) return;
+
+        const name = n(row?.name || row?.slug || row?.font_class || `icon-${id}`);
+        items.push({
+          provider: "iconfont",
+          id,
+          name,
+          previewSvg,
+          detailUrl: `${SOURCE_MAP.iconfont.origin}/icons/detail?icon_id=${encodeURIComponent(id)}`,
+        });
+        seen.add(id);
       });
-      seen.add(id);
-    });
+
+      if (rows.length < ICONFONT_PAGE_SIZE) break;
+      if (Number.isFinite(totalAvailable) && items.length >= Math.min(target, totalAvailable)) break;
+    }
 
     this.searchCache.set(key, {at: now, items});
     return items;
@@ -939,49 +957,59 @@ class EmojiMarketPlugin extends Plugin {
     const cached = this.searchCache.get(key);
     if (cached && now - cached.at < SEARCH_TTL) return cached.items;
 
-    const url = `${SOURCE_MAP.cainiao.origin}/s-${encodeURIComponent(keyword)}-1.html`;
-    const html = await this.requestText(
-      url,
-      {
-        method: "GET",
-        headers: {
-          Referer: `${SOURCE_MAP.cainiao.origin}/`,
-          Origin: SOURCE_MAP.cainiao.origin,
-          "User-Agent": "Mozilla/5.0",
-        },
-      },
-      SOURCE_MAP.cainiao.origin
-    );
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(String(html || ""), "text/html");
+    const target = this.getMaxPerSource("cainiao");
+    const maxPages = Math.min(CAINIAO_MAX_PAGES, Math.max(1, target));
     const items = [];
     const seen = new Set();
+    const parser = new DOMParser();
 
-    doc.querySelectorAll(".icon-item").forEach((item) => {
-      const id = n(item.getAttribute("data-id"));
-      if (!id || seen.has(id)) return;
+    for (let page = 1; page <= maxPages && items.length < target; page += 1) {
+      const url = `${SOURCE_MAP.cainiao.origin}/s-${encodeURIComponent(keyword)}-${page}.html`;
+      const html = await this.requestText(
+        url,
+        {
+          method: "GET",
+          headers: {
+            Referer: `${SOURCE_MAP.cainiao.origin}/`,
+            Origin: SOURCE_MAP.cainiao.origin,
+            "User-Agent": "Mozilla/5.0",
+          },
+        },
+        SOURCE_MAP.cainiao.origin
+      );
 
-      const previewSvg = s(item.querySelector(".icon-content svg")?.outerHTML).trim();
-      if (!previewSvg) return;
+      const doc = parser.parseFromString(String(html || ""), "text/html");
+      let added = 0;
 
-      const anchor = item.querySelector('a[href^="/detail/"]');
-      const rawPath = s(anchor?.getAttribute("href"), `/detail/${id}.html`);
-      const detailPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+      doc.querySelectorAll(".icon-item").forEach((item) => {
+        if (items.length >= target) return;
+        const id = n(item.getAttribute("data-id"));
+        if (!id || seen.has(id)) return;
 
-      let name = n(anchor?.textContent || "");
-      if (!name) name = n(item.querySelector("p")?.textContent || "");
-      if (!name) name = `icon-${id}`;
+        const previewSvg = s(item.querySelector(".icon-content svg")?.outerHTML).trim();
+        if (!previewSvg) return;
 
-      items.push({
-        provider: "cainiao",
-        id,
-        name,
-        previewSvg,
-        detailUrl: this.toAbs(SOURCE_MAP.cainiao, detailPath),
+        const anchor = item.querySelector('a[href^="/detail/"]');
+        const rawPath = s(anchor?.getAttribute("href"), `/detail/${id}.html`);
+        const detailPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+
+        let name = n(anchor?.textContent || "");
+        if (!name) name = n(item.querySelector("p")?.textContent || "");
+        if (!name) name = `icon-${id}`;
+
+        items.push({
+          provider: "cainiao",
+          id,
+          name,
+          previewSvg,
+          detailUrl: this.toAbs(SOURCE_MAP.cainiao, detailPath),
+        });
+        seen.add(id);
+        added += 1;
       });
-      seen.add(id);
-    });
+
+      if (!added) break;
+    }
 
     this.searchCache.set(key, {at: now, items});
     return items;
