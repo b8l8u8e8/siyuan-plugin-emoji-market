@@ -2289,9 +2289,11 @@ class EmojiMarketPlugin extends Plugin {
     if (!raw) raw = s(icon?.previewSvg).trim();
     if (!raw) throw new Error(this.t("errorNoSvg"));
 
-    const selectedColor = s(context.selectedColor).trim();
-    if (selectedColor && context.keepOriginalColor === false) {
-      raw = this.applyColor(raw, selectedColor);
+    const keepOriginalColor = context.keepOriginalColor === true;
+    const requestedColor = normalizeHex(s(context.selectedColor).trim());
+    const appliedColor = keepOriginalColor ? "" : (requestedColor || FALLBACK_COLOR);
+    if (!keepOriginalColor) {
+      raw = this.applyColor(raw, appliedColor);
     }
 
     const cleaned = this.sanitizeSvg(raw);
@@ -2299,7 +2301,10 @@ class EmojiMarketPlugin extends Plugin {
 
     const idPart = s(icon?.id ? String(icon.id) : "").trim() || String(Date.now());
     const namePart = slug(s(icon?.name) || s(detail?.title));
-    const baseName = namePart ? `${namePart}-${idPart}` : `emoji-${source.id}-${idPart}`;
+    const baseNameStem = namePart ? `${namePart}-${idPart}` : `emoji-${source.id}-${idPart}`;
+    // Include color in file stem so repeated imports of one icon with different colors do not share one path.
+    const colorKey = keepOriginalColor ? "orig" : `c${appliedColor.slice(1)}`;
+    const baseName = `${baseNameStem}-${colorKey}`;
 
     const fileName = `${baseName}.svg`;
     const unicodePath = `${source.dir}/${fileName}`;
