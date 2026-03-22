@@ -59,5 +59,7 @@
   "settingsLimitPrefix": "Limit",
   "settingsLimitUnit": "items",
   "settingsPerSourceLimit": "Max",
-  "settingsNoSourceEnabled": "No market selected. Please enable at least one source in plugin settings."
+  "settingsNoSourceEnabled": "No market selected. Please enable at least one source in plugin settings.",
+  "settingsInlineHintTitle": "Insert emoji in document",
+  "settingsInlineHintDesc": "Show Emoji Market when typing :+keyword. Disable if frequently triggered by accident."
 }

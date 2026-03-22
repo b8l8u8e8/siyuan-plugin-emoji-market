@@ -59,5 +59,7 @@
   "settingsLimitPrefix": "上限",
   "settingsLimitUnit": "条",
   "settingsPerSourceLimit": "最多",
-  "settingsNoSourceEnabled": "当前未启用任何市场，请在插件设置中至少启用一个来源。"
+  "settingsNoSourceEnabled": "当前未启用任何市场，请在插件设置中至少启用一个来源。",
+  "settingsInlineHintTitle": "文档内插入表情",
+  "settingsInlineHintDesc": "输入 :+关键词 时显示表情市场，频繁误触发可关闭此选项。"
 }

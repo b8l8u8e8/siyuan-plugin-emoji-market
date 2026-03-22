@@ -129,6 +129,7 @@ class EmojiMarketPlugin extends Plugin {
     this.settingSourceInputs = new Map();
     this.settingSourceMaxInputs = new Map();
     this.settingSourceActionEls = new Map();
+    this.settingInlineHintInput = null;
     this.setting = null;
     this.importDialog = null;
 
@@ -160,6 +161,7 @@ class EmojiMarketPlugin extends Plugin {
     this.settingSourceInputs.clear();
     this.settingSourceMaxInputs.clear();
     this.settingSourceActionEls.clear();
+    this.settingInlineHintInput = null;
   }
 
   async uninstall() {
@@ -183,6 +185,7 @@ class EmojiMarketPlugin extends Plugin {
     return {
       enabledSources: Object.fromEntries(SOURCES.map((source) => [source.id, true])),
       maxPerSourceBySource: Object.fromEntries(SOURCES.map((source) => [source.id, DEFAULT_MAX_PER_SOURCE])),
+      enableInlineHint: true,
     };
   }
 
@@ -206,9 +209,14 @@ class EmojiMarketPlugin extends Plugin {
       maxPerSourceBySource[source.id] = this.normalizeMaxPerSource(maxVal);
     });
 
+    const enableInlineHint = Object.prototype.hasOwnProperty.call(data, "enableInlineHint")
+      ? !!data.enableInlineHint
+      : defaults.enableInlineHint;
+
     return {
       enabledSources,
       maxPerSourceBySource,
+      enableInlineHint,
     };
   }
 
@@ -264,6 +272,9 @@ class EmojiMarketPlugin extends Plugin {
         }
         if (action instanceof HTMLElement) action.classList.toggle("is-disabled", !enabled);
       });
+    }
+    if (this.settingInlineHintInput instanceof HTMLInputElement) {
+      this.settingInlineHintInput.checked = !!this.settingsData?.enableInlineHint;
     }
   }
 
@@ -356,6 +367,23 @@ class EmojiMarketPlugin extends Plugin {
           return action;
         },
       });
+    });
+
+    this.setting.addItem({
+      title: this.t("settingsInlineHintTitle"),
+      description: this.t("settingsInlineHintDesc"),
+      createActionElement: () => {
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "b3-switch fn__flex-center";
+        checkbox.checked = !!this.settingsData?.enableInlineHint;
+        checkbox.addEventListener("change", () => {
+          this.settingsData.enableInlineHint = !!checkbox.checked;
+          void this.saveSettingsData();
+        });
+        this.settingInlineHintInput = checkbox;
+        return checkbox;
+      },
     });
 
     this.syncSettingUI();
@@ -451,6 +479,7 @@ class EmojiMarketPlugin extends Plugin {
 
   enhanceHintPanel(root) {
     if (!(root instanceof HTMLElement)) return;
+    if (!this.settingsData?.enableInlineHint) return;
     const panel = root.querySelector(".emojis__panel");
     if (!(panel instanceof HTMLElement)) return;
 
