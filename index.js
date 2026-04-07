@@ -70,6 +70,56 @@ function rgbToHex(v) {
   if (c.some((x) => !Number.isFinite(x))) return "";
   return `#${c.map((x) => x.toString(16).padStart(2, "0")).join("")}`;
 }
+function normalizeColorToken(v) {
+  const t = String(v || "").trim();
+  if (!t) return "";
+  const hex = normalizeHex(t);
+  if (hex) return hex;
+  const rgb = rgbToHex(t);
+  if (rgb) return rgb;
+  const lower = t.toLowerCase();
+  if (lower === "currentcolor") return "currentColor";
+  return lower;
+}
+function displayColorFromToken(v, fallback = FALLBACK_COLOR) {
+  const token = normalizeColorToken(v);
+  if (!token || token === "currentColor") return fallback;
+  return isHex(token) ? token : (normalizeHex(token) || rgbToHex(token) || fallback);
+}
+function encodeColorVector(colors) {
+  const hexes = colors.map((color) => normalizeHex(color)).filter(Boolean);
+  if (!hexes.length) return "";
+
+  const bytes = new Uint8Array(hexes.length * 3);
+  hexes.forEach((hex, index) => {
+    const raw = hex.slice(1);
+    const offset = index * 3;
+    bytes[offset] = parseInt(raw.slice(0, 2), 16);
+    bytes[offset + 1] = parseInt(raw.slice(2, 4), 16);
+    bytes[offset + 2] = parseInt(raw.slice(4, 6), 16);
+  });
+
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+  }
+
+  if (typeof btoa === "function") {
+    let text = "";
+    bytes.forEach((value) => {
+      text += String.fromCharCode(value);
+    });
+    return btoa(text)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+  }
+
+  return hexes.map((hex) => hex.slice(1)).join("");
+}
 function slug(v) {
   return String(v || "")
     .toLowerCase()
@@ -149,7 +199,7 @@ class EmojiMarketPlugin extends Plugin {
       this.observer = null;
     }
     if (this.dialogResolve) {
-      this.dialogResolve({confirmed: false, keepOriginalColor: true, selectedColor: ""});
+      this.dialogResolve({confirmed: false, keepOriginalColor: true, selectedColor: "", slotColors: {}});
       this.dialogResolve = null;
     }
     this.dialogPromise = null;
@@ -839,6 +889,7 @@ class EmojiMarketPlugin extends Plugin {
       const saved = await this.saveToEmojiStore(finalSource, finalIcon, finalDetail, {
         keyword: kw,
         selectedColor: decision.selectedColor,
+        slotColors: decision.slotColors,
         keepOriginalColor: decision.keepOriginalColor,
       });
       await this.refreshRuntimeEmojiCache(saved.unicodePath);
@@ -1247,6 +1298,375 @@ class EmojiMarketPlugin extends Plugin {
     return Array.from(set).slice(0, 16);
   }
 
+  normalizeSlotColorMap(input) {
+    const out = {};
+    if (!input || typeof input !== "object") return out;
+    Object.entries(input).forEach(([slotId, color]) => {
+      const id = String(slotId || "").trim();
+      const hex = normalizeHex(color);
+      if (!id || !hex) return;
+      out[id] = hex;
+    });
+    return out;
+  }
+
+  getColorAnalysis(detail, icon) {
+    const host = detail && typeof detail === "object" ? detail : null;
+    if (host && host.__ifColorAnalysis) return host.__ifColorAnalysis;
+    const rawSvg = s(detail?.svg).trim() || s(icon?.previewSvg).trim();
+    const currentColorFallback = isHex(detail?.defaultColor) ? detail.defaultColor : FALLBACK_COLOR;
+    const analysis = this.inspectSvgColorSlots(rawSvg, currentColorFallback);
+    if (host) host.__ifColorAnalysis = analysis;
+    return analysis;
+  }
+
+  getResolvedSlotColors(analysis, slotColors = {}, fallbackColor = FALLBACK_COLOR) {
+    if (!Array.isArray(analysis?.slots) || !analysis.slots.length) return [];
+    const overrides = this.normalizeSlotColorMap(slotColors);
+    return analysis.slots.map((slot) => {
+      const override = normalizeHex(overrides[String(slot.id)]);
+      if (override) return override;
+      return displayColorFromToken(slot.displayColor || slot.token, fallbackColor);
+    });
+  }
+
+  inspectSvgColorSlots(rawSvg, currentColorFallback = FALLBACK_COLOR) {
+    const fallback = isHex(currentColorFallback) ? currentColorFallback : FALLBACK_COLOR;
+    const empty = {slots: []};
+    if (!rawSvg) return empty;
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawSvg, "image/svg+xml");
+      const svg = doc.documentElement;
+      if (!svg || svg.nodeName.toLowerCase() !== "svg") return empty;
+
+      const all = [svg, ...svg.querySelectorAll("*")];
+      const slotMap = new Map();
+      const slotList = [];
+      const props = ["fill", "stroke", "stop-color", "color"];
+      const graphicSelector = "path,circle,rect,polygon,polyline,ellipse,line,use,text,tspan";
+      const graphicTags = new Set(graphicSelector.split(","));
+      const paintServerTags = new Set(["lineargradient", "radialgradient", "pattern"]);
+      const nodeIndexByEl = new Map(all.map((el, index) => [el, index]));
+
+      const ensureSlot = (key, options = {}) => {
+        let slot = slotMap.get(key);
+        if (!slot) {
+          slot = {
+            id: s(options.id, String(slotList.length)),
+            order: Number.isFinite(options.order) ? options.order : slotList.length,
+            token: s(options.token),
+            displayColor: displayColorFromToken(options.token, fallback),
+            nodeIndexes: new Set(),
+            sources: [],
+          };
+          slotMap.set(key, slot);
+          slotList.push(slot);
+          return slot;
+        }
+
+        if (!slot.token && options.token) slot.token = s(options.token);
+        if ((!slot.displayColor || !isHex(slot.displayColor)) && options.token) {
+          slot.displayColor = displayColorFromToken(options.token, fallback);
+        }
+        if (Number.isFinite(options.order)) slot.order = Math.min(slot.order, options.order);
+        return slot;
+      };
+
+      const collectUrlRefs = (value) => {
+        const refs = [];
+        const re = /url\(\s*(['"]?)([^)"']+)\1\s*\)/gi;
+        let match = null;
+        const text = s(value);
+        while ((match = re.exec(text))) {
+          const rawRef = s(match[2]).trim();
+          const ref = s(rawRef.split("#").pop()).trim();
+          if (ref) refs.push(ref);
+        }
+        return refs;
+      };
+
+      const findPaintServerOwnerId = (el) => {
+        let node = el;
+        while (node instanceof Element) {
+          if (!paintServerTags.has(node.tagName.toLowerCase())) {
+            node = node.parentElement;
+            continue;
+          }
+          const id = s(node.getAttribute("id")).trim();
+          if (id) return id;
+          node = node.parentElement;
+        }
+        return "";
+      };
+
+      const hasIndexedSlots = all.some((el) => /^\d+$/.test(s(el.getAttribute("data-colorindex")).trim()));
+
+      if (hasIndexedSlots) {
+        all.forEach((el, nodeIndex) => {
+          const slotId = s(el.getAttribute("data-colorindex")).trim();
+          if (!/^\d+$/.test(slotId)) return;
+
+          const sources = [];
+          let firstToken = "";
+          props.forEach((attrName) => {
+            const value = s(el.getAttribute(attrName)).trim();
+            if (!this.isReplacableColor(value)) return;
+            if (!firstToken) firstToken = normalizeColorToken(value);
+            sources.push({nodeIndex, kind: "attr", attrName});
+          });
+
+          const style = el.style;
+          props.forEach((propName) => {
+            const value = s(style?.getPropertyValue(propName)).trim();
+            if (!this.isReplacableColor(value)) return;
+            if (!firstToken) firstToken = normalizeColorToken(value);
+            sources.push({nodeIndex, kind: "style", propName});
+          });
+
+          const slot = ensureSlot(`i:${slotId}`, {
+            id: slotId,
+            order: parseIntSafe(slotId, slotList.length),
+            token: firstToken,
+          });
+          sources.forEach((source) => slot.sources.push(source));
+        });
+      } else {
+        const linkSlot = (value, source, nodeIndex) => {
+          if (!this.isReplacableColor(value)) return;
+          const token = normalizeColorToken(value);
+          if (!token) return;
+          const slot = ensureSlot(`c:${token}`, {token});
+          slot.sources.push(source);
+        };
+
+        all.forEach((el, nodeIndex) => {
+          props.forEach((attrName) => {
+            linkSlot(s(el.getAttribute(attrName)).trim(), {nodeIndex, kind: "attr", attrName}, nodeIndex);
+          });
+
+          const style = el.style;
+          props.forEach((propName) => {
+            linkSlot(s(style?.getPropertyValue(propName)).trim(), {nodeIndex, kind: "style", propName}, nodeIndex);
+          });
+        });
+      }
+
+      const slotById = new Map(slotList.map((slot) => [String(slot.id), slot]));
+      const sourceSlotMap = new Map();
+      const paintServerSlots = new Map();
+
+      const pushSourceSlot = (nodeIndex, kind, propName, slotId) => {
+        const key = `${nodeIndex}:${kind}:${propName}`;
+        if (!sourceSlotMap.has(key)) sourceSlotMap.set(key, new Set());
+        sourceSlotMap.get(key).add(String(slotId));
+      };
+
+      slotList.forEach((slot) => {
+        slot.sources.forEach((source) => {
+          const propName = source.kind === "attr" ? source.attrName : source.propName;
+          pushSourceSlot(source.nodeIndex, source.kind, propName, slot.id);
+
+          if (propName !== "stop-color") return;
+          const ownerId = findPaintServerOwnerId(all[source.nodeIndex]);
+          if (!ownerId) return;
+          if (!paintServerSlots.has(ownerId)) paintServerSlots.set(ownerId, new Set());
+          paintServerSlots.get(ownerId).add(String(slot.id));
+        });
+      });
+
+      const readInlinePaint = (el, nodeIndex, propName) => {
+        const styleVal = s(el.style?.getPropertyValue(propName)).trim();
+        if (styleVal) {
+          return {
+            value: styleVal,
+            slotIds: Array.from(sourceSlotMap.get(`${nodeIndex}:style:${propName}`) || []),
+          };
+        }
+
+        const attrVal = s(el.getAttribute(propName)).trim();
+        if (attrVal) {
+          return {
+            value: attrVal,
+            slotIds: Array.from(sourceSlotMap.get(`${nodeIndex}:attr:${propName}`) || []),
+          };
+        }
+
+        return null;
+      };
+
+      const colorCache = new Map();
+      const resolveColorSlots = (graphicIndex) => {
+        if (colorCache.has(graphicIndex)) return colorCache.get(graphicIndex);
+
+        const out = [];
+        let node = all[graphicIndex];
+        while (node instanceof Element) {
+          const nodeIndex = nodeIndexByEl.get(node);
+          if (!Number.isInteger(nodeIndex)) break;
+          const def = readInlinePaint(node, nodeIndex, "color");
+          if (!def) {
+            node = node.parentElement;
+            continue;
+          }
+
+          const token = normalizeColorToken(def.value);
+          if (!token || token === "inherit") {
+            node = node.parentElement;
+            continue;
+          }
+          if (token === "currentColor") {
+            node = node.parentElement;
+            continue;
+          }
+          colorCache.set(graphicIndex, def.slotIds);
+          return def.slotIds;
+        }
+
+        colorCache.set(graphicIndex, out);
+        return out;
+      };
+
+      const resolvePaintSlots = (graphicIndex, propName) => {
+        let node = all[graphicIndex];
+        while (node instanceof Element) {
+          const nodeIndex = nodeIndexByEl.get(node);
+          if (!Number.isInteger(nodeIndex)) break;
+          const def = readInlinePaint(node, nodeIndex, propName);
+          if (!def) {
+            node = node.parentElement;
+            continue;
+          }
+
+          const token = normalizeColorToken(def.value);
+          if (!token || token === "inherit") {
+            node = node.parentElement;
+            continue;
+          }
+          if (token === "none" || token === "transparent") return [];
+          if (token === "currentColor") return resolveColorSlots(graphicIndex);
+
+          const refs = collectUrlRefs(def.value);
+          if (refs.length) {
+            const ids = new Set();
+            refs.forEach((ref) => {
+              (paintServerSlots.get(ref) || []).forEach((slotId) => ids.add(slotId));
+            });
+            return Array.from(ids);
+          }
+
+          return def.slotIds;
+        }
+        return [];
+      };
+
+      all.forEach((el, nodeIndex) => {
+        if (!(el instanceof SVGGraphicsElement)) return;
+        const tagName = el.tagName.toLowerCase();
+        if (!graphicTags.has(tagName)) return;
+        if (el.closest("defs")) return;
+
+        const slotIds = new Set([
+          ...resolvePaintSlots(nodeIndex, "fill"),
+          ...resolvePaintSlots(nodeIndex, "stroke"),
+        ]);
+        slotIds.forEach((slotId) => {
+          const slot = slotById.get(String(slotId));
+          if (slot) slot.nodeIndexes.add(nodeIndex);
+        });
+      });
+
+      slotList.sort((a, b) => a.order - b.order || String(a.id).localeCompare(String(b.id), "en"));
+
+      const slots = slotList
+        .map((slot, order) => ({
+          id: String(slot.id),
+          order,
+          token: s(slot.token),
+          displayColor: displayColorFromToken(slot.token || slot.displayColor, fallback),
+          nodeIndexes: Array.from(slot.nodeIndexes).sort((a, b) => a - b),
+          sources: slot.sources.slice(),
+        }))
+        .filter((slot) => slot.sources.length > 0 || slot.nodeIndexes.length > 0);
+
+      return {slots};
+    } catch {
+      return empty;
+    }
+  }
+
+  applySlotColors(rawSvg, slotColors = {}, options = {}) {
+    if (!rawSvg) return "";
+    const analysis = options.analysis || this.inspectSvgColorSlots(rawSvg, options.currentColorFallback || FALLBACK_COLOR);
+    if (!Array.isArray(analysis?.slots) || !analysis.slots.length) return rawSvg;
+
+    const colorMap = new Map(
+      Object.entries(this.normalizeSlotColorMap(slotColors))
+        .filter(([, color]) => !!color)
+        .map(([slotId, color]) => [String(slotId), color])
+    );
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawSvg, "image/svg+xml");
+      const svg = doc.documentElement;
+      if (!svg || svg.nodeName.toLowerCase() !== "svg") return rawSvg;
+
+      const all = [svg, ...svg.querySelectorAll("*")];
+      const interactive = options.markInteractive === true;
+      const activeSlot = s(options.activeSlot).trim();
+      const nodeSlots = interactive ? new Map() : null;
+
+      all.forEach((el) => {
+        el.removeAttribute("data-if-slotindexes");
+        el.removeAttribute("data-if-active-slot");
+      });
+
+      analysis.slots.forEach((slot) => {
+        const slotId = String(slot.id);
+        const nextColor = colorMap.get(slotId);
+
+        if (interactive) {
+          slot.nodeIndexes.forEach((nodeIndex) => {
+            if (!nodeSlots.has(nodeIndex)) nodeSlots.set(nodeIndex, []);
+            const refs = nodeSlots.get(nodeIndex);
+            if (!refs.includes(slotId)) refs.push(slotId);
+          });
+        }
+
+        if (!nextColor) return;
+        slot.sources.forEach((source) => {
+          const el = all[source.nodeIndex];
+          if (!(el instanceof Element)) return;
+
+          if (source.kind === "attr") {
+            if (el.hasAttribute(source.attrName)) el.setAttribute(source.attrName, nextColor);
+            return;
+          }
+
+          if (source.kind === "style") {
+            el.style.setProperty(source.propName, nextColor);
+          }
+        });
+      });
+
+      if (interactive) {
+        nodeSlots.forEach((slotIds, nodeIndex) => {
+          const el = all[nodeIndex];
+          if (!(el instanceof Element)) return;
+          if (slotIds.length === 1) el.setAttribute("data-colorindex", slotIds[0]);
+          else if (slotIds.length > 1) el.setAttribute("data-if-slotindexes", slotIds.join(","));
+          if (activeSlot && slotIds.includes(activeSlot)) el.setAttribute("data-if-active-slot", "1");
+        });
+      }
+
+      return new XMLSerializer().serializeToString(svg);
+    } catch {
+      return rawSvg;
+    }
+  }
+
   toAbs(source, input) {
     const x = s(input).trim();
     if (!x) return "";
@@ -1257,7 +1677,7 @@ class EmojiMarketPlugin extends Plugin {
     }
   }
 
-  buildPalette(detail, defaultColor) {
+  buildPalette(defaultColor) {
     const out = [];
     const seen = new Set();
     const push = (x) => {
@@ -1268,9 +1688,8 @@ class EmojiMarketPlugin extends Plugin {
     };
 
     push(defaultColor);
-    if (Array.isArray(detail?.paletteColors)) detail.paletteColors.forEach(push);
     SWATCHES.forEach(push);
-    return out.slice(0, 16);
+    return out.slice(0, SWATCHES.length + 1);
   }
 
   /* 鈹€鈹€ Import dialog (FIX #2: avatar with referrerpolicy + error fallback) 鈹€鈹€ */
@@ -1326,7 +1745,17 @@ class EmojiMarketPlugin extends Plugin {
     const showUsageBlock = !isIconfont && (!!usageLinesFinal.length || !!usageLinkHtml);
 
     const defaultColor = isHex(detail?.defaultColor) ? detail.defaultColor : FALLBACK_COLOR;
-    const swatches = this.buildPalette(detail, defaultColor)
+    const colorAnalysis = this.getColorAnalysis(detail, icon);
+    const colorSlots = Array.isArray(colorAnalysis?.slots) ? colorAnalysis.slots : [];
+    const slotSelectHtml = colorSlots.length > 1
+      ? `<label class="if-market-slot-select-wrap" data-role="slot-wrap" style="--if-slot:${colorSlots[0].displayColor};">
+          <span class="if-market-slot-swatch"></span>
+          <select class="if-market-slot-select" data-role="slot-select" aria-label="Color slot">
+            ${colorSlots.map((slot, idx) => `<option value="${this.escapeHtml(String(slot.id))}">#${idx + 1}</option>`).join("")}
+          </select>
+        </label>`
+      : "";
+    const swatches = this.buildPalette(defaultColor)
       .map(
         (c) => `<button type="button" class="if-market-swatch${c.toLowerCase() === defaultColor.toLowerCase() ? " is-active" : ""}" data-color="${c}" style="--if-swatch:${c};" aria-label="${c}"></button>`
       )
@@ -1404,6 +1833,7 @@ class EmojiMarketPlugin extends Plugin {
                   <input type="checkbox" data-role="keep-original" checked />
                   <span>${this.escapeHtml(this.t("keepOriginalColor"))}</span>
                 </label>
+                ${slotSelectHtml}
                 <label class="if-market-color-input">
                   <span>${this.escapeHtml(this.t("importColor"))}</span>
                   <input type="color" data-role="color-picker" value="${defaultColor}" disabled />
@@ -1449,6 +1879,7 @@ class EmojiMarketPlugin extends Plugin {
                   <input type="checkbox" data-role="keep-original" checked />
                   <span>${this.escapeHtml(this.t("keepOriginalColor"))}</span>
                 </label>
+                ${slotSelectHtml}
                 <label class="if-market-color-input">
                   <span>${this.escapeHtml(this.t("importColor"))}</span>
                   <input type="color" data-role="color-picker" value="${defaultColor}" disabled />
@@ -1531,6 +1962,7 @@ class EmojiMarketPlugin extends Plugin {
         confirmed: false,
         keepOriginalColor: true,
         selectedColor: "",
+        slotColors: {},
         source: currentSource,
         icon: currentIcon,
         detail: currentDetail,
@@ -1633,12 +2065,37 @@ class EmojiMarketPlugin extends Plugin {
         const keep = root.querySelector('[data-role="keep-original"]');
         const color = root.querySelector('[data-role="color-picker"]');
         const sw = root.querySelector('[data-role="swatches"]');
+        const slotWrap = root.querySelector('[data-role="slot-wrap"]');
+        const slotSelect = root.querySelector('[data-role="slot-select"]');
         const ok = root.querySelector('[data-role="confirm"]');
         const host = root.querySelector('[data-role="preview"]');
         const navPrev = root.querySelector('[data-role="nav-prev"]');
         const navNext = root.querySelector('[data-role="nav-next"]');
         const consentCheck = root.querySelector(".if-market-consent-check");
         const baseSvg = s(currentDetail?.svg || currentIcon?.previewSvg);
+        const defaultColor = isHex(currentDetail?.defaultColor) ? currentDetail.defaultColor : FALLBACK_COLOR;
+        const colorAnalysis = this.getColorAnalysis(currentDetail, currentIcon);
+        const colorSlots = Array.isArray(colorAnalysis?.slots) ? colorAnalysis.slots : [];
+        const slotLookup = new Map(colorSlots.map((slot) => [String(slot.id), slot]));
+        const slotOverrides = new Map();
+        let activeSlot = colorSlots.length ? String(colorSlots[0].id) : "";
+
+        const getSlotColor = (slotId) => {
+          const override = normalizeHex(slotOverrides.get(String(slotId)));
+          if (override) return override;
+          const slot = slotLookup.get(String(slotId));
+          return isHex(slot?.displayColor) ? slot.displayColor : defaultColor;
+        };
+
+        const getSlotOverrideObject = () => {
+          const out = {};
+          slotOverrides.forEach((value, slotId) => {
+            const hex = normalizeHex(value);
+            if (!hex) return;
+            out[String(slotId)] = hex;
+          });
+          return out;
+        };
 
         const syncSwatch = () => {
           if (!(sw instanceof HTMLElement) || !(color instanceof HTMLInputElement)) return;
@@ -1649,15 +2106,117 @@ class EmojiMarketPlugin extends Plugin {
           });
         };
 
+        const drawActiveSlotOutline = (svg) => {
+          if (!(svg instanceof SVGSVGElement) || !activeSlot) return;
+
+          let activeNodes = Array.from(svg.querySelectorAll('[data-if-active-slot="1"]'))
+            .filter((el) => el instanceof SVGGraphicsElement)
+            .filter((el) => el.tagName.toLowerCase() !== "svg")
+            .filter((el, _, arr) => !arr.some((other) => other !== el && other.contains(el)));
+          if (!activeNodes.length) return;
+
+          const ns = "http://www.w3.org/2000/svg";
+          const normalizeOutlineNode = (node, stroke, width, dasharray = "") => {
+            if (!(node instanceof Element)) return;
+
+            node.removeAttribute("id");
+            node.removeAttribute("class");
+            node.removeAttribute("filter");
+            node.removeAttribute("data-colorindex");
+            node.removeAttribute("data-if-slotindexes");
+            node.removeAttribute("data-if-active-slot");
+
+            if (node instanceof SVGGraphicsElement && node.tagName.toLowerCase() !== "g") {
+              node.removeAttribute("fill-opacity");
+              node.removeAttribute("stroke-opacity");
+              node.setAttribute("fill", "none");
+              node.setAttribute("stroke", stroke);
+              node.setAttribute("stroke-width", width);
+              node.setAttribute("vector-effect", "non-scaling-stroke");
+              node.setAttribute("stroke-linejoin", "round");
+              node.setAttribute("stroke-linecap", "round");
+              node.setAttribute("paint-order", "stroke");
+              if (dasharray) node.setAttribute("stroke-dasharray", dasharray);
+              else node.removeAttribute("stroke-dasharray");
+              node.style.removeProperty("fill");
+              node.style.removeProperty("stroke");
+              node.style.removeProperty("filter");
+            }
+
+            Array.from(node.children).forEach((child) => normalizeOutlineNode(child, stroke, width, dasharray));
+          };
+
+          const buildOutlineLayer = (stroke, width, dasharray = "") => {
+            const layer = document.createElementNS(ns, "g");
+            layer.setAttribute("data-if-active-outline", "1");
+            layer.setAttribute("pointer-events", "none");
+
+            activeNodes.forEach((node) => {
+              const ancestors = [];
+              let parent = node.parentElement;
+              while (parent instanceof SVGElement && parent !== svg) {
+                ancestors.push(parent);
+                parent = parent.parentElement;
+              }
+
+              let cursor = layer;
+              ancestors.reverse().forEach((ancestor) => {
+                const branch = ancestor.cloneNode(false);
+                normalizeOutlineNode(branch, stroke, width, dasharray);
+                cursor.appendChild(branch);
+                cursor = branch;
+              });
+
+              const clone = node.cloneNode(true);
+              normalizeOutlineNode(clone, stroke, width, dasharray);
+              cursor.appendChild(clone);
+            });
+
+            return layer;
+          };
+
+          svg.appendChild(buildOutlineLayer("#ffffff", "4"));
+          svg.appendChild(buildOutlineLayer("#2563eb", "2", "6 4"));
+        };
+
+        const syncSlots = () => {
+          if (slotWrap instanceof HTMLElement && slotSelect instanceof HTMLSelectElement && colorSlots.length > 1) {
+            const activeMeta = slotLookup.get(activeSlot);
+            if (activeMeta) {
+              slotWrap.style.setProperty("--if-slot", getSlotColor(activeMeta.id));
+              slotSelect.value = activeMeta.id;
+            }
+          }
+
+          if (color instanceof HTMLInputElement) {
+            const current = activeSlot ? getSlotColor(activeSlot) : (normalizeHex(color.value) || defaultColor);
+            if (isHex(current)) color.value = current;
+            color.disabled = !!keep?.checked || (!!colorSlots.length && !activeSlot);
+          }
+
+          syncSwatch();
+        };
+
         const render = () => {
           if (!(host instanceof HTMLElement)) return;
           host.innerHTML = "";
+          host.classList.toggle("if-market-preview--interactive", colorSlots.length > 0);
 
           const keepOriginal = !!keep?.checked;
-          const pick = s(color?.value, FALLBACK_COLOR);
-          const text = keepOriginal ? baseSvg : this.applyColor(baseSvg, pick);
+          let text = baseSvg;
+          if (colorSlots.length > 0) {
+            const overrides = keepOriginal ? {} : getSlotOverrideObject();
+            text = this.applySlotColors(baseSvg, overrides, {
+              analysis: colorAnalysis,
+              markInteractive: true,
+              activeSlot,
+            });
+          } else if (!keepOriginal) {
+            const pick = s(color?.value, FALLBACK_COLOR);
+            text = this.applyColor(baseSvg, pick);
+          }
 
-          const svg = this.safeSvgElement(text);
+          const svg = this.safeSvgElement(text, colorSlots.length > 0);
           if (!svg) {
             host.textContent = this.t("previewUnavailable");
             return;
@@ -1671,16 +2230,18 @@ class EmojiMarketPlugin extends Plugin {
 
           svg.removeAttribute("width");
           svg.removeAttribute("height");
-          svg.removeAttribute("style");
           svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
           svg.style.position = "static";
           svg.style.width = "72%";
           svg.style.height = "72%";
           svg.style.maxWidth = "72%";
           svg.style.maxHeight = "72%";
+          svg.style.color = defaultColor;
+          svg.style.pointerEvents = colorSlots.length > 0 ? "auto" : "none";
 
           host.appendChild(svg);
-          syncSwatch();
+          drawActiveSlotOutline(svg);
+          syncSlots();
         };
 
         const notifyConsentRequired = () => {
@@ -1707,7 +2268,8 @@ class EmojiMarketPlugin extends Plugin {
           settle({
             confirmed: !!confirmed,
             keepOriginalColor: keepOriginal,
-            selectedColor: keepOriginal ? "" : s(color?.value, FALLBACK_COLOR),
+            selectedColor: keepOriginal || colorSlots.length ? "" : s(color?.value, FALLBACK_COLOR),
+            slotColors: keepOriginal ? {} : getSlotOverrideObject(),
             source: currentSource,
             icon: currentIcon,
             detail: currentDetail,
@@ -1762,10 +2324,51 @@ class EmojiMarketPlugin extends Plugin {
           }
         });
         keep?.addEventListener("change", () => {
-          if (color) color.disabled = !!keep.checked;
           render();
         });
-        color?.addEventListener("input", render);
+        color?.addEventListener("input", () => {
+          if (colorSlots.length > 0 && activeSlot) {
+            const hex = normalizeHex(color.value);
+            if (!hex) return;
+            if (keep) keep.checked = false;
+            slotOverrides.set(activeSlot, hex);
+          }
+          render();
+        });
+
+        slotSelect?.addEventListener("change", () => {
+          const slotId = s(slotSelect.value).trim();
+          if (!slotLookup.has(slotId)) return;
+          activeSlot = slotId;
+          render();
+        });
+
+        if (host instanceof HTMLElement && colorSlots.length) {
+          host.addEventListener("click", (e) => {
+            const el = e.target?.closest?.("[data-colorindex], [data-if-slotindexes]");
+            if (!(el instanceof Element)) return;
+            const slotIds = [];
+            const directSlot = s(el.getAttribute("data-colorindex")).trim();
+            if (slotLookup.has(directSlot)) slotIds.push(directSlot);
+            s(el.getAttribute("data-if-slotindexes"))
+              .split(",")
+              .map((x) => s(x).trim())
+              .forEach((slotId) => {
+                if (!slotLookup.has(slotId) || slotIds.includes(slotId)) return;
+                slotIds.push(slotId);
+              });
+            if (!slotIds.length) return;
+            if (slotIds.length === 1) {
+              activeSlot = slotIds[0];
+            } else {
+              const currentIndex = slotIds.indexOf(activeSlot);
+              activeSlot = currentIndex >= 0
+                ? slotIds[(currentIndex + 1) % slotIds.length]
+                : slotIds[0];
+            }
+            render();
+          });
+        }
 
         if (sw instanceof HTMLElement) {
           sw.addEventListener("click", (e) => {
@@ -1774,6 +2377,9 @@ class EmojiMarketPlugin extends Plugin {
             const hex = normalizeHex(el.getAttribute("data-color"));
             if (!hex) return;
             if (keep) keep.checked = false;
+            if (colorSlots.length > 0 && activeSlot) {
+              slotOverrides.set(activeSlot, hex);
+            }
             if (color instanceof HTMLInputElement) {
               color.disabled = false;
               color.value = hex;
@@ -2320,9 +2926,21 @@ class EmojiMarketPlugin extends Plugin {
 
     const keepOriginalColor = context.keepOriginalColor === true;
     const requestedColor = normalizeHex(s(context.selectedColor).trim());
+    const slotColors = this.normalizeSlotColorMap(context.slotColors);
+    const colorAnalysis = this.getColorAnalysis(detail, icon);
+    const originalSlotColors = this.getResolvedSlotColors(colorAnalysis, {}, detail?.defaultColor);
+    const resolvedSlotColors = this.getResolvedSlotColors(colorAnalysis, slotColors, detail?.defaultColor);
+    const slotVariantSignature = encodeColorVector(resolvedSlotColors);
+    const hasSlotOverrides = Object.keys(slotColors).length > 0
+      && !!slotVariantSignature
+      && resolvedSlotColors.some((color, index) => color !== originalSlotColors[index]);
     const appliedColor = keepOriginalColor ? "" : (requestedColor || FALLBACK_COLOR);
     if (!keepOriginalColor) {
-      raw = this.applyColor(raw, appliedColor);
+      if (hasSlotOverrides) {
+        raw = this.applySlotColors(raw, slotColors, {analysis: colorAnalysis});
+      } else if (requestedColor) {
+        raw = this.applyColor(raw, appliedColor);
+      }
     }
 
     const cleaned = this.sanitizeSvg(raw);
@@ -2332,7 +2950,11 @@ class EmojiMarketPlugin extends Plugin {
     const namePart = slug(s(icon?.name) || s(detail?.title));
     const baseNameStem = namePart ? `${namePart}-${idPart}` : `emoji-${source.id}-${idPart}`;
     // Include color in file stem so repeated imports of one icon with different colors do not share one path.
-    const colorKey = keepOriginalColor ? "orig" : `c${appliedColor.slice(1)}`;
+    const colorKey = keepOriginalColor
+      ? "orig"
+      : (hasSlotOverrides
+          ? `v${slotVariantSignature}`
+          : (requestedColor ? `c${appliedColor.slice(1)}` : "orig"));
     const baseName = `${baseNameStem}-${colorKey}`;
 
     const fileName = `${baseName}.svg`;
@@ -2345,22 +2967,38 @@ class EmojiMarketPlugin extends Plugin {
     return {unicodePath};
   }
 
-  sanitizeSvg(raw) {
+  sanitizeSvg(raw, options = {}) {
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(raw, "image/svg+xml");
       const svg = doc.documentElement;
       if (!svg || svg.nodeName.toLowerCase() !== "svg") return "";
 
+      const preserveColorMarkers = options.preserveColorMarkers === true;
+
       svg.removeAttribute("id");
       svg.removeAttribute("class");
-      svg.removeAttribute("style");
+      const rootStyle = svg.style;
+      if (rootStyle) {
+        const safeRootStyle = [];
+        ["fill", "stroke", "color", "stop-color", "overflow"].forEach((propName) => {
+          const value = s(rootStyle.getPropertyValue(propName)).trim();
+          if (!value) return;
+          safeRootStyle.push(`${propName}:${value}`);
+        });
+        if (safeRootStyle.length) svg.setAttribute("style", safeRootStyle.join(";"));
+        else svg.removeAttribute("style");
+      } else {
+        svg.removeAttribute("style");
+      }
 
       svg.querySelectorAll("script,foreignObject").forEach((el) => el.remove());
       [svg, ...svg.querySelectorAll("*")].forEach((el) => {
         for (const attr of Array.from(el.attributes)) {
           if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-          if (attr.name === "data-colorindex") el.removeAttribute(attr.name);
+          if (!preserveColorMarkers && (attr.name === "data-colorindex" || attr.name.startsWith("data-if-"))) {
+            el.removeAttribute(attr.name);
+          }
         }
       });
 
@@ -2820,8 +3458,8 @@ class EmojiMarketPlugin extends Plugin {
 
   /* 鈹€鈹€ DOM helpers 鈹€鈹€ */
 
-  safeSvgElement(raw) {
-    const text = this.sanitizeSvg(raw);
+  safeSvgElement(raw, interactive = false) {
+    const text = this.sanitizeSvg(raw, {preserveColorMarkers: interactive});
     if (!text) return null;
     try {
       const parser = new DOMParser();
@@ -2831,7 +3469,7 @@ class EmojiMarketPlugin extends Plugin {
       svg.setAttribute("width", "100%");
       svg.setAttribute("height", "100%");
       svg.style.display = "block";
-      svg.style.pointerEvents = "none";
+      svg.style.pointerEvents = interactive ? "auto" : "none";
       return document.importNode(svg, true);
     } catch {
       return null;

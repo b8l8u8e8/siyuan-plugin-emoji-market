@@ -335,6 +335,11 @@
   position: static !important;
 }
 
+.if-market-preview--interactive svg [data-colorindex],
+.if-market-preview--interactive svg [data-if-slotindexes] {
+  cursor: pointer;
+}
+
 /* 鈹€鈹€ Side panel 鈹€鈹€ */
 
 .if-market-side {
@@ -376,6 +381,41 @@
 
 .if-market-color-keep {
   margin-bottom: 8px;
+}
+
+.if-market-slot-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--b3-theme-primary);
+  border-radius: 999px;
+  background: var(--b3-theme-primary-lightest, rgba(59, 130, 246, 0.08));
+  color: var(--b3-theme-on-surface);
+  font-size: 12px;
+}
+
+.if-market-slot-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--if-slot, #64748b);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  flex: 0 0 auto;
+}
+
+.if-market-slot-select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding-right: 10px;
+}
+
+.if-market-slot-select:focus {
+  outline: none;
 }
 
 .if-market-color-input input[type="color"] {
