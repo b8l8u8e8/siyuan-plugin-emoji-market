@@ -151,6 +151,25 @@ function fmtDate(v) {
   const m = t.match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : t;
 }
+function normalizeRelativeDir(v, fallback = "") {
+  const raw = String(v || "").trim().replace(/\\/g, "/");
+  const parts = raw
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const clean = [];
+
+  parts.forEach((part) => {
+    if (part === "." || part === "..") return;
+    const next = part.replace(/[<>:"|?*\u0000-\u001f]/g, "-").replace(/\.+$/g, "").trim();
+    if (next) clean.push(next);
+  });
+
+  const joined = clean.join("/");
+  if (joined) return joined;
+  const fallbackNorm = String(fallback || "").trim().replace(/\\/g, "/");
+  return fallbackNorm.replace(/^\/+|\/+$/g, "");
+}
 function httpsUrl(v) {
   const t = s(v).trim();
   if (!t) return "";
@@ -178,6 +197,7 @@ class EmojiMarketPlugin extends Plugin {
     this.settingsData = this.defaultSettings();
     this.settingSourceInputs = new Map();
     this.settingSourceMaxInputs = new Map();
+    this.settingSourceStorageInputs = new Map();
     this.settingSourceActionEls = new Map();
     this.settingInlineHintInput = null;
     this.setting = null;
@@ -210,6 +230,7 @@ class EmojiMarketPlugin extends Plugin {
     this.setting = null;
     this.settingSourceInputs.clear();
     this.settingSourceMaxInputs.clear();
+    this.settingSourceStorageInputs.clear();
     this.settingSourceActionEls.clear();
     this.settingInlineHintInput = null;
   }
@@ -235,6 +256,7 @@ class EmojiMarketPlugin extends Plugin {
     return {
       enabledSources: Object.fromEntries(SOURCES.map((source) => [source.id, true])),
       maxPerSourceBySource: Object.fromEntries(SOURCES.map((source) => [source.id, DEFAULT_MAX_PER_SOURCE])),
+      storageDirBySource: Object.fromEntries(SOURCES.map((source) => [source.id, source.dir])),
       enableInlineHint: true,
     };
   }
@@ -244,10 +266,12 @@ class EmojiMarketPlugin extends Plugin {
     const data = raw && typeof raw === "object" ? raw : {};
     const enabledRaw = data.enabledSources && typeof data.enabledSources === "object" ? data.enabledSources : {};
     const maxRaw = data.maxPerSourceBySource && typeof data.maxPerSourceBySource === "object" ? data.maxPerSourceBySource : {};
+    const storageRaw = data.storageDirBySource && typeof data.storageDirBySource === "object" ? data.storageDirBySource : {};
     const legacyMax = Object.prototype.hasOwnProperty.call(data, "maxPerSource") ? data.maxPerSource : undefined;
 
     const enabledSources = {};
     const maxPerSourceBySource = {};
+    const storageDirBySource = {};
     SOURCES.forEach((source) => {
       if (Object.prototype.hasOwnProperty.call(enabledRaw, source.id)) {
         enabledSources[source.id] = !!enabledRaw[source.id];
@@ -257,6 +281,11 @@ class EmojiMarketPlugin extends Plugin {
 
       const maxVal = Object.prototype.hasOwnProperty.call(maxRaw, source.id) ? maxRaw[source.id] : legacyMax;
       maxPerSourceBySource[source.id] = this.normalizeMaxPerSource(maxVal);
+
+      const storageVal = Object.prototype.hasOwnProperty.call(storageRaw, source.id)
+        ? storageRaw[source.id]
+        : defaults.storageDirBySource[source.id];
+      storageDirBySource[source.id] = normalizeRelativeDir(storageVal, source.dir);
     });
 
     const enableInlineHint = Object.prototype.hasOwnProperty.call(data, "enableInlineHint")
@@ -266,6 +295,7 @@ class EmojiMarketPlugin extends Plugin {
     return {
       enabledSources,
       maxPerSourceBySource,
+      storageDirBySource,
       enableInlineHint,
     };
   }
@@ -287,6 +317,12 @@ class EmojiMarketPlugin extends Plugin {
   getMaxPerSource(sourceId = "") {
     if (!sourceId) return DEFAULT_MAX_PER_SOURCE;
     return this.normalizeMaxPerSource(this.settingsData?.maxPerSourceBySource?.[sourceId]);
+  }
+
+  getSourceStorageDir(sourceId = "") {
+    const source = SOURCE_MAP[sourceId];
+    if (!source) return "";
+    return normalizeRelativeDir(this.settingsData?.storageDirBySource?.[sourceId], source.dir);
   }
 
   async loadSettingsData() {
@@ -313,6 +349,7 @@ class EmojiMarketPlugin extends Plugin {
       SOURCES.forEach((source) => {
         const input = this.settingSourceInputs.get(source.id);
         const maxInput = this.settingSourceMaxInputs.get(source.id);
+        const storageInput = this.settingSourceStorageInputs.get(source.id);
         const action = this.settingSourceActionEls.get(source.id);
         const enabled = this.isSourceEnabled(source.id);
         if (input instanceof HTMLInputElement) input.checked = enabled;
@@ -320,6 +357,7 @@ class EmojiMarketPlugin extends Plugin {
           maxInput.value = String(this.getMaxPerSource(source.id));
           maxInput.disabled = !enabled;
         }
+        if (storageInput instanceof HTMLInputElement) storageInput.value = this.getSourceStorageDir(source.id);
         if (action instanceof HTMLElement) action.classList.toggle("is-disabled", !enabled);
       });
     }
@@ -339,6 +377,7 @@ class EmojiMarketPlugin extends Plugin {
   initSettingPanel() {
     this.settingSourceInputs.clear();
     this.settingSourceMaxInputs.clear();
+    this.settingSourceStorageInputs.clear();
     this.settingSourceActionEls.clear();
     this.setting = new Setting({});
     this.setting.addItem({
@@ -349,7 +388,6 @@ class EmojiMarketPlugin extends Plugin {
     SOURCES.forEach((source) => {
       this.setting.addItem({
         title: source.name,
-        description: "",
         createActionElement: () => {
           const action = document.createElement("div");
           action.className = "if-market-setting-source-actions";
@@ -382,6 +420,27 @@ class EmojiMarketPlugin extends Plugin {
           limitUnit.className = "if-market-setting-source-limit-unit";
           limitUnit.textContent = this.t("settingsLimitUnit");
 
+          const storageWrap = document.createElement("label");
+          storageWrap.className = "if-market-setting-source-storage";
+          const storageLabel = document.createElement("span");
+          storageLabel.className = "if-market-setting-source-storage-label";
+          storageLabel.textContent = this.t("settingsStoragePrefix");
+
+          const storageInput = document.createElement("input");
+          storageInput.type = "text";
+          storageInput.spellcheck = false;
+          storageInput.placeholder = source.dir;
+          storageInput.setAttribute("aria-label", `${source.name} ${this.t("settingsStoragePath")}`);
+          storageInput.className = "b3-text-field if-market-setting-source-storage-input";
+          storageInput.value = this.getSourceStorageDir(source.id);
+
+          const openButton = document.createElement("button");
+          openButton.type = "button";
+          openButton.className = "if-market-setting-source-open";
+          openButton.title = this.t("settingsOpenFolder");
+          openButton.setAttribute("aria-label", `${source.name} ${this.t("settingsOpenFolder")}`);
+          openButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l2 2h8a2 2 0 0 1 2 2v8.5A3.5 3.5 0 0 1 18.5 20h-13A3.5 3.5 0 0 1 2 16.5v-9A3.5 3.5 0 0 1 5.5 4H10zm8 4h-5.17l-2-2H5.5A1.5 1.5 0 0 0 4 7.5v9A1.5 1.5 0 0 0 5.5 18h13a1.5 1.5 0 0 0 1.5-1.5V8A1 1 0 0 0 19 7h-1z"/></svg>`;
+
           const applySourceMax = () => {
             const next = this.normalizeMaxPerSource(maxInput.value);
             maxInput.value = String(next);
@@ -393,6 +452,20 @@ class EmojiMarketPlugin extends Plugin {
           };
           maxInput.addEventListener("change", applySourceMax);
           maxInput.addEventListener("blur", applySourceMax);
+
+          const applyStorageDir = () => {
+            const next = normalizeRelativeDir(storageInput.value, source.dir);
+            storageInput.value = next;
+            if (next === this.getSourceStorageDir(source.id)) return;
+            this.settingsData.storageDirBySource[source.id] = next;
+            void this.saveSettingsData();
+          };
+          storageInput.addEventListener("change", applyStorageDir);
+          storageInput.addEventListener("blur", applyStorageDir);
+
+          openButton.addEventListener("click", () => {
+            void this.openSourceStorageFolder(source.id);
+          });
 
           checkbox.addEventListener("change", () => {
             const enabled = !!checkbox.checked;
@@ -407,12 +480,17 @@ class EmojiMarketPlugin extends Plugin {
           limitWrap.appendChild(limitLabel);
           limitWrap.appendChild(maxInput);
           limitWrap.appendChild(limitUnit);
-          action.appendChild(toggle);
+          storageWrap.appendChild(storageLabel);
+          storageWrap.appendChild(storageInput);
           action.appendChild(limitWrap);
+          action.appendChild(storageWrap);
+          action.appendChild(openButton);
+          action.appendChild(toggle);
           action.classList.toggle("is-disabled", !checkbox.checked);
 
           this.settingSourceInputs.set(source.id, checkbox);
           this.settingSourceMaxInputs.set(source.id, maxInput);
+          this.settingSourceStorageInputs.set(source.id, storageInput);
           this.settingSourceActionEls.set(source.id, action);
           return action;
         },
@@ -2958,10 +3036,11 @@ class EmojiMarketPlugin extends Plugin {
     const baseName = `${baseNameStem}-${colorKey}`;
 
     const fileName = `${baseName}.svg`;
-    const unicodePath = `${source.dir}/${fileName}`;
+    const storageDir = this.getSourceStorageDir(source.id);
+    const unicodePath = `${storageDir}/${fileName}`;
     const savedBase = await this.writeEmojiFile(source, fileName, cleaned, "image/svg+xml");
 
-    const legacyMetaPath = `${savedBase}/${source.dir}/${baseName}.meta.json`;
+    const legacyMetaPath = `${savedBase}/${storageDir}/${baseName}.meta.json`;
     await this.removeFileIfExists(legacyMetaPath);
 
     return {unicodePath};
@@ -3021,11 +3100,71 @@ class EmojiMarketPlugin extends Plugin {
     return ordered;
   }
 
+  async resolveOpenEmojiBase() {
+    if (s(this.emojiBase).trim()) return this.emojiBase;
+    for (const base of ["/data/emojis", "/emojis"]) {
+      const rows = await this.readDirSafe(base);
+      if (rows.length) return base;
+    }
+    return "/data/emojis";
+  }
+
+  getWorkspaceDir() {
+    return s(globalThis?.siyuan?.config?.system?.workspaceDir).trim();
+  }
+
+  getDesktopShell() {
+    try {
+      const electron = require("electron");
+      if (electron?.shell?.openPath) return electron.shell;
+    } catch {
+      // ignore
+    }
+    try {
+      const remote = require("@electron/remote");
+      if (remote?.shell?.openPath) return remote.shell;
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  async openSourceStorageFolder(sourceId) {
+    const source = SOURCE_MAP[sourceId];
+    if (!source) return;
+
+    const workspaceDir = this.getWorkspaceDir();
+    const shell = this.getDesktopShell();
+    if (!workspaceDir || !shell) {
+      if (typeof showMessage === "function") showMessage(this.t("errorOpenFolderUnsupported"), 3000, "error");
+      return;
+    }
+
+    try {
+      const path = require("path");
+      const fs = require("fs");
+      const base = await this.resolveOpenEmojiBase();
+      const relBase = String(base || "").replace(/^\/+/, "");
+      const relDir = this.getSourceStorageDir(source.id);
+      const fullPath = path.join(workspaceDir, relBase, ...relDir.split("/").filter(Boolean));
+      fs.mkdirSync(fullPath, {recursive: true});
+      const result = await shell.openPath(fullPath);
+      if (typeof result === "string" && result.trim()) {
+        throw new Error(result.trim());
+      }
+    } catch (err) {
+      if (typeof showMessage === "function") {
+        showMessage(this.t("errorOpenFolderFailed", {msg: safeMsg(err)}), 3000, "error");
+      }
+    }
+  }
+
   async writeEmojiFile(source, fileName, content, mime = "text/plain") {
     let lastErr = null;
     const bases = this.getEmojiBaseCandidates();
+    const storageDir = this.getSourceStorageDir(source.id);
     for (const base of bases) {
-      const filePath = `${base}/${source.dir}/${fileName}`;
+      const filePath = `${base}/${storageDir}/${fileName}`;
       try {
         await this.putFile(filePath, content, fileName, mime);
         this.emojiBase = base;

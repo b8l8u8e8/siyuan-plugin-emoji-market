@@ -53,13 +53,18 @@
   "importSuccess": "Icon imported successfully ({{path}}). Type the keyword again to use it.",
 
   "settingsSourcesTitle": "Enabled markets",
-  "settingsSourcesDesc": "Choose markets and set per-source max results ({{min}}-{{max}}).",
+  "settingsSourcesDesc": "Choose markets and set each market's max display count (1-2000) and emoji storage location.",
   "settingsMaxTitle": "Max results per source",
   "settingsMaxDesc": "Range: {{min}}-{{max}}, default 30.",
   "settingsLimitPrefix": "Limit",
   "settingsLimitUnit": "items",
   "settingsPerSourceLimit": "Max",
+  "settingsStoragePrefix": "Storage location",
+  "settingsStoragePath": "Storage path",
+  "settingsOpenFolder": "Open folder",
   "settingsNoSourceEnabled": "No market selected. Please enable at least one source in plugin settings.",
   "settingsInlineHintTitle": "Insert emoji in document",
-  "settingsInlineHintDesc": "Show Emoji Market when typing :+keyword. Disable if frequently triggered by accident."
+  "settingsInlineHintDesc": "Show Emoji Market when typing :+keyword. Disable if frequently triggered by accident.",
+  "errorOpenFolderUnsupported": "Opening folders directly is not supported in the current environment.",
+  "errorOpenFolderFailed": "Failed to open folder: {{msg}}"
 }

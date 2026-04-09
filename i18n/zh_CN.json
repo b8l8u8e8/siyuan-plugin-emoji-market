@@ -53,7 +53,7 @@
   "importSuccess": "图标已导入成功（{{path}}），再次输入关键词即可使用。",
 
   "settingsSourcesTitle": "启用市场",
-  "settingsSourcesDesc": "选择要启用的市场，并设置每个市场的最大显示数量（{{min}}-{{max}}）。",
+  "settingsSourcesDesc": "选择要启用的市场，并设置每个市场的最大显示数量（1-2000）和表情存储位置。",
   "settingsMaxTitle": "单源最多显示数量",
   "settingsMaxDesc": "取值范围：{{min}}-{{max}}，默认 30。",
   "settingsLimitPrefix": "上限",
@@ -62,4 +62,10 @@
   "settingsNoSourceEnabled": "当前未启用任何市场，请在插件设置中至少启用一个来源。",
   "settingsInlineHintTitle": "文档内插入表情",
   "settingsInlineHintDesc": "输入 :+关键词 时显示表情市场，频繁误触发可关闭此选项。"
+  ,
+  "settingsStoragePrefix": "存储位置",
+  "settingsStoragePath": "存储路径",
+  "settingsOpenFolder": "打开文件夹",
+  "errorOpenFolderUnsupported": "当前环境不支持直接打开文件夹",
+  "errorOpenFolderFailed": "打开文件夹失败：{{msg}}"
 }
