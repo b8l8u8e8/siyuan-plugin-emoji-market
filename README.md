@@ -1,89 +1,103 @@
 # ✨ Emoji Market
 
-> 🤔 Feel like SiYuan Note's built-in emojis are too limited?  
-> Can't find the right icon when changing document covers?  
-> **Emoji Market** helps you access massive icon libraries — if you can dream it, you can find it.
+> 🤔 Feel like SiYuan’s built-in emojis are too limited?  
+> Struggling to find the right icon for your document?  
+> **Emoji Market** brings you access to massive icon libraries.
 
-A plugin built for SiYuan Note 🚀  
-Injects search results from mainstream icon platforms directly into SiYuan's native emoji panel.
+A plugin built for SiYuan Notes 🚀  
+It injects search results from mainstream icon platforms directly into SiYuan’s native emoji panel.
 
-🔍 Search → 👀 Preview → 🎨 Colorize → ✅ Use  
+🔍 Search → 👀 Preview → 🎨 Customize Color → ✅ Use  
 A seamless workflow without ever leaving SiYuan.
 
-🌍 Document Language:  
-[Chinese README](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/README_zh_CN.md) ｜ [English README](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/README.md)
+🌍 Documentation:  
+[中文 README](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/README_zh_CN.md) ｜ [English README](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/README.md)
 
 ---
 
 ## 🎨 Icon Sources
 
-| Source        | Website                                        | Scale           | Description                                                  |
-| ------------- | ---------------------------------------------- | --------------- | ------------------------------------------------------------ |
-| Iconfont      | [iconfont.cn](https://www.iconfont.cn)         | **30M+** Icons  | One of China's largest vector icon libraries, widely used by designers and developers. |
-| Cainiao Icons | [icon.sucai999.com](https://icon.sucai999.com) | **200K+** Icons | A free icon search and download platform with rich categories. |
+| Source                     | Website                                      | Scale              | Description                                      |
+| -------------------------- | -------------------------------------------- | ------------------ | ------------------------------------------------ |
+| Alibaba Iconfont           | [iconfont.cn](https://www.iconfont.cn)       | **30M+ icons**     | One of the largest vector icon libraries in China |
+| Cainiao Icons              | [icon.sucai999.com](https://icon.sucai999.com) | **200K+ icons**    | Free icon search and download platform            |
 
-With tens of millions of vector icons combined, you can pick anything you want —  
-From minimalist lines to exquisite illustrations, everything is here 🎉
-
----
-## 📖 Demo (GIF from GitHub; may require a proxy)
-
-![Demo GIF](https://github.com/user-attachments/assets/b51552ca-44f1-471b-b4b1-ce281ddd7b87)
+Combined, these platforms offer tens of millions of vector icons —  
+from minimal line styles to detailed illustrations 🎉
 
 ---
-## 🚀 How to Use
 
-1. **Open the Emoji Panel** in SiYuan  
-   (Click the document's emoji button or type `:` in the text)
-2. **Enter Keywords** in the search box  
-   Results from both platforms will immediately appear in the **"Emoji Market"** section below the built-in results.
-3. **Click any icon** to open the preview dialog  
-   View author details, license, colors, and more.
-4. **Choose a custom color** 🎨 or keep the original color as needed.
-5. Check the confirmation box and click **"Use Now"**.
-6. The icon is **saved locally and applied automatically** ✅ — no additional clicks required.
+## 📖 Demo (GIFs hosted on GitHub, may require proxy)
 
-🔒 **Storage Note:** Emojis are loaded dynamically and are not written to local storage until you confirm your selection. Browsing and previewing are handled entirely in memory and cleared upon closing, leaving no cache residue.
+### Insert Emoji in Document Tree
+
+![Document Tree Emoji](https://github.com/user-attachments/assets/e2d8e2d9-604c-4f29-a763-fd8099080255)
+
+### Insert Emoji in Document Content
+
+![Inline Emoji](https://github.com/user-attachments/assets/05298bc8-5a8c-4660-ad63-7f6e116fa9b7)
+
+---
+
+## 🚀 Usage
+
+1. Open the emoji panel in SiYuan  
+   (Click the emoji button on a document, or type `:` in the editor)
+2. Enter keywords in the search box  
+   Results from both platforms will appear under the built-in results in the **"Emoji Market"** section
+3. Click any icon to open the preview dialog  
+   View author, license, color options, and more
+4. Choose a custom color 🎨 or keep the original
+5. Check the confirmation box and click **"Use Now"**
+6. The icon will be saved locally and applied automatically ✅ — no extra clicks needed
+
+🔒 Storage Note:  
+Before you confirm your selection, icons are only dynamically loaded and are **not written to local storage**.  
+Browsing and previewing are handled entirely in memory, leaving no cache after closing.
 
 ---
 
 ## 📂 Icon Storage Location
 
-Icons you choose to use will be saved as SVG files in SiYuan's standard custom emoji directories:
+Selected icons are saved as SVG files in SiYuan’s standard custom emoji directories:
 
-- `data/emojis/iconfont/` — From Iconfont (Alibaba)
-- `data/emojis/cainiao/` — From Cainiao Icons
+- `data/emojis/iconfont/` — Icons from Alibaba Iconfont
+- `data/emojis/cainiao/` — Icons from Cainiao
 
-These are standard SiYuan custom emoji files.  
-They will be retained and display normally in the emoji panel even if the plugin is uninstalled.
+These are standard SiYuan custom emoji files. You can also modify the storage location in the plugin settings.  
+Even if the plugin is uninstalled, these files will remain to prevent existing emojis from breaking.  
+If needed, you can manually clean them up in the directories above.
 
 ---
 
 ## ⚖️ Disclaimer
 
-**This plugin is a convenience tool only.** It provides a simplified interface for searching and using icons. All icon assets originate from third-party platforms and are unrelated to the plugin author.
+**This plugin is a convenience tool only.**  
+It provides a simplified interface for searching and using icons, all of which come from third-party platforms and are not affiliated with the plugin author.
 
-- All icons are sourced from **iconfont.cn** and **icon.sucai999.com**.
-- The plugin author **does not own, host, or distribute** any icon assets.
-- Each icon has its own independent license terms (Free / Commercial / Paid vary).
-- Users are responsible for confirming that their use of an icon complies with its license terms.
-- The plugin attempts to display author and license information but **does not guarantee its accuracy**.
-- For commercial use 💼, please ensure you obtain formal authorization.
+- All icons are sourced from **iconfont.cn** and **icon.sucai999.com**
+- The plugin author does **not own, host, or distribute** any icon assets
+- Each icon has its own license terms (free / commercial / paid may vary)
+- Users are responsible for ensuring compliance with the respective licenses
+- The plugin attempts to display author and license information, but **does not guarantee accuracy**
+- For commercial use 💼, please ensure proper authorization is obtained
 
-This plugin is provided **"as is"** without warranty of any kind.  
-The plugin author assumes no copyright or legal liability arising from the use of these icons.
+This plugin is provided **"as is"**, without warranty of any kind.  
+The author assumes no liability for any copyright or legal issues arising from icon usage.
 
 ---
 
-## ❤️ Support the Author
+## ❤️ Support
 
-Developing plugins isn't easy. If you find this helpful, feel free to give it a ⭐ Star to show your support!
+If you find this plugin useful, feel free to give it a ⭐ Star!
+
+---
 
 ## 🛠️ Other Information
 
-- 🐞 Bug Reports:  
+- 🐞 Issues:  
   [GitHub Issues](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/issues)
-- 📄 Open Source License:  
+- 📄 License:  
   [MIT License](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/LICENSE)
 - 🧾 Changelog:  
   [CHANGELOG.md](https://github.com/b8l8u8e8/siyuan-plugin-emoji-market/blob/main/CHANGELOG.md)
