@@ -199,6 +199,13 @@
   box-shadow: none;
 }
 
+.if-market-setting-source-open:disabled {
+  color: var(--b3-theme-on-surface-light);
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
 .if-market-setting-source-open svg {
   width: 16px;
   height: 16px;

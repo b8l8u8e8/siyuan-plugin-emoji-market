@@ -198,6 +198,7 @@ class EmojiMarketPlugin extends Plugin {
     this.settingSourceInputs = new Map();
     this.settingSourceMaxInputs = new Map();
     this.settingSourceStorageInputs = new Map();
+    this.settingSourceOpenButtons = new Map();
     this.settingSourceActionEls = new Map();
     this.settingInlineHintInput = null;
     this.setting = null;
@@ -231,6 +232,7 @@ class EmojiMarketPlugin extends Plugin {
     this.settingSourceInputs.clear();
     this.settingSourceMaxInputs.clear();
     this.settingSourceStorageInputs.clear();
+    this.settingSourceOpenButtons.clear();
     this.settingSourceActionEls.clear();
     this.settingInlineHintInput = null;
   }
@@ -350,6 +352,7 @@ class EmojiMarketPlugin extends Plugin {
         const input = this.settingSourceInputs.get(source.id);
         const maxInput = this.settingSourceMaxInputs.get(source.id);
         const storageInput = this.settingSourceStorageInputs.get(source.id);
+        const openButton = this.settingSourceOpenButtons.get(source.id);
         const action = this.settingSourceActionEls.get(source.id);
         const enabled = this.isSourceEnabled(source.id);
         if (input instanceof HTMLInputElement) input.checked = enabled;
@@ -357,7 +360,11 @@ class EmojiMarketPlugin extends Plugin {
           maxInput.value = String(this.getMaxPerSource(source.id));
           maxInput.disabled = !enabled;
         }
-        if (storageInput instanceof HTMLInputElement) storageInput.value = this.getSourceStorageDir(source.id);
+        if (storageInput instanceof HTMLInputElement) {
+          storageInput.value = this.getSourceStorageDir(source.id);
+          storageInput.disabled = !enabled;
+        }
+        if (openButton instanceof HTMLButtonElement) openButton.disabled = !enabled;
         if (action instanceof HTMLElement) action.classList.toggle("is-disabled", !enabled);
       });
     }
@@ -378,6 +385,7 @@ class EmojiMarketPlugin extends Plugin {
     this.settingSourceInputs.clear();
     this.settingSourceMaxInputs.clear();
     this.settingSourceStorageInputs.clear();
+    this.settingSourceOpenButtons.clear();
     this.settingSourceActionEls.clear();
     this.setting = new Setting({});
     this.setting.addItem({
@@ -440,6 +448,7 @@ class EmojiMarketPlugin extends Plugin {
           openButton.title = this.t("settingsOpenFolder");
           openButton.setAttribute("aria-label", `${source.name} ${this.t("settingsOpenFolder")}`);
           openButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l2 2h8a2 2 0 0 1 2 2v8.5A3.5 3.5 0 0 1 18.5 20h-13A3.5 3.5 0 0 1 2 16.5v-9A3.5 3.5 0 0 1 5.5 4H10zm8 4h-5.17l-2-2H5.5A1.5 1.5 0 0 0 4 7.5v9A1.5 1.5 0 0 0 5.5 18h13a1.5 1.5 0 0 0 1.5-1.5V8A1 1 0 0 0 19 7h-1z"/></svg>`;
+          openButton.disabled = !checkbox.checked;
 
           const applySourceMax = () => {
             const next = this.normalizeMaxPerSource(maxInput.value);
@@ -471,6 +480,8 @@ class EmojiMarketPlugin extends Plugin {
             const enabled = !!checkbox.checked;
             this.settingsData.enabledSources[source.id] = enabled;
             maxInput.disabled = !enabled;
+            storageInput.disabled = !enabled;
+            openButton.disabled = !enabled;
             action.classList.toggle("is-disabled", !enabled);
             void this.saveSettingsData();
             this.refreshEnhancedPanels();
@@ -491,6 +502,7 @@ class EmojiMarketPlugin extends Plugin {
           this.settingSourceInputs.set(source.id, checkbox);
           this.settingSourceMaxInputs.set(source.id, maxInput);
           this.settingSourceStorageInputs.set(source.id, storageInput);
+          this.settingSourceOpenButtons.set(source.id, openButton);
           this.settingSourceActionEls.set(source.id, action);
           return action;
         },
