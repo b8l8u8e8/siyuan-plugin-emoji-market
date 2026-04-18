@@ -501,6 +501,42 @@
   outline: none;
 }
 
+.if-market-slot-reset {
+  width: 24px;
+  height: 24px;
+  margin: 0 0 8px 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b3-theme-on-surface-light);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.if-market-slot-reset svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.if-market-slot-reset:hover:not(:disabled) {
+  background: var(--b3-list-hover);
+  color: var(--b3-theme-primary);
+}
+
+.if-market-slot-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .if-market-color-input input[type="color"] {
   width: 40px;
   height: 28px;

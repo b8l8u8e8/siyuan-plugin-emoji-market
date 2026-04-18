@@ -20,6 +20,7 @@
 
   "keepOriginalColor": "保留原始颜色",
   "importColor": "导入颜色",
+  "restoreOriginalColor": "恢复原色",
   "colorTip": "仅影响本次导入到思源的 SVG，不会修改网站原始数据。",
 
   "consent": "我已阅读作者与协议信息，确认合法使用，相关风险由我自行承担。",

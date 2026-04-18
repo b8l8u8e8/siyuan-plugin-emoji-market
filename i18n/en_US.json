@@ -20,6 +20,7 @@
 
   "keepOriginalColor": "Keep original color",
   "importColor": "Import color",
+  "restoreOriginalColor": "Restore original color",
   "colorTip": "Only affects the imported SVG in SiYuan. The original data is not modified.",
 
   "consent": "I have read the author and license information, confirm legal use, and accept all related risks.",

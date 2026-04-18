@@ -1845,6 +1845,11 @@ class EmojiMarketPlugin extends Plugin {
           </select>
         </label>`
       : "";
+    const slotResetHtml = colorSlots.length > 1
+      ? `<button type="button" class="if-market-slot-reset" data-role="slot-reset" title="${this.escapeHtml(this.t("restoreOriginalColor"))}" aria-label="${this.escapeHtml(this.t("restoreOriginalColor"))}" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a4 4 0 1 1 0 8h-1"/></svg>
+        </button>`
+      : "";
     const swatches = this.buildPalette(defaultColor)
       .map(
         (c) => `<button type="button" class="if-market-swatch${c.toLowerCase() === defaultColor.toLowerCase() ? " is-active" : ""}" data-color="${c}" style="--if-swatch:${c};" aria-label="${c}"></button>`
@@ -1924,6 +1929,7 @@ class EmojiMarketPlugin extends Plugin {
                   <span>${this.escapeHtml(this.t("keepOriginalColor"))}</span>
                 </label>
                 ${slotSelectHtml}
+                ${slotResetHtml}
                 <label class="if-market-color-input">
                   <span>${this.escapeHtml(this.t("importColor"))}</span>
                   <input type="color" data-role="color-picker" value="${defaultColor}" disabled />
@@ -1970,6 +1976,7 @@ class EmojiMarketPlugin extends Plugin {
                   <span>${this.escapeHtml(this.t("keepOriginalColor"))}</span>
                 </label>
                 ${slotSelectHtml}
+                ${slotResetHtml}
                 <label class="if-market-color-input">
                   <span>${this.escapeHtml(this.t("importColor"))}</span>
                   <input type="color" data-role="color-picker" value="${defaultColor}" disabled />
@@ -2157,6 +2164,7 @@ class EmojiMarketPlugin extends Plugin {
         const sw = root.querySelector('[data-role="swatches"]');
         const slotWrap = root.querySelector('[data-role="slot-wrap"]');
         const slotSelect = root.querySelector('[data-role="slot-select"]');
+        const slotReset = root.querySelector('[data-role="slot-reset"]');
         const ok = root.querySelector('[data-role="confirm"]');
         const host = root.querySelector('[data-role="preview"]');
         const navPrev = root.querySelector('[data-role="nav-prev"]');
@@ -2176,6 +2184,7 @@ class EmojiMarketPlugin extends Plugin {
           const slot = slotLookup.get(String(slotId));
           return isHex(slot?.displayColor) ? slot.displayColor : defaultColor;
         };
+        const hasSlotOverride = (slotId) => !!normalizeHex(slotOverrides.get(String(slotId)));
 
         const getSlotOverrideObject = () => {
           const out = {};
@@ -2282,6 +2291,9 @@ class EmojiMarketPlugin extends Plugin {
             const current = activeSlot ? getSlotColor(activeSlot) : (normalizeHex(color.value) || defaultColor);
             if (isHex(current)) color.value = current;
             color.disabled = !!keep?.checked || (!!colorSlots.length && !activeSlot);
+          }
+          if (slotReset instanceof HTMLButtonElement) {
+            slotReset.disabled = !(activeSlot && hasSlotOverride(activeSlot));
           }
 
           syncSwatch();
@@ -2430,6 +2442,11 @@ class EmojiMarketPlugin extends Plugin {
           const slotId = s(slotSelect.value).trim();
           if (!slotLookup.has(slotId)) return;
           activeSlot = slotId;
+          render();
+        });
+        slotReset?.addEventListener("click", () => {
+          if (!activeSlot || !hasSlotOverride(activeSlot)) return;
+          slotOverrides.delete(activeSlot);
           render();
         });
 
