@@ -991,7 +991,7 @@ class EmojiMarketPlugin extends Plugin {
         saved.unicodePath,
         selectionCtx,
         kw,
-        !!finalBtn.closest(".protyle-hint, .hint--menu")
+        this.isHintSelectionContext(selectionCtx)
       );
     } catch (err) {
       const msg = this.t("downloadFailed", {source: source.name, msg: safeMsg(err)});
@@ -2838,27 +2838,10 @@ class EmojiMarketPlugin extends Plugin {
     return this.restoreSelectionRange(ctx?.range);
   }
 
-  focusProtyle(protyle) {
-    try {
-      const inst = typeof protyle?.getInstance === "function" ? protyle.getInstance() : null;
-      if (inst && typeof inst.focus === "function") {
-        inst.focus();
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-
-    try {
-      const el = protyle?.wysiwyg?.element;
-      if (el instanceof HTMLElement && typeof el.focus === "function") {
-        el.focus();
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-    return false;
+  isHintSelectionContext(ctx) {
+    if (!ctx) return false;
+    if (ctx.hintElement instanceof HTMLElement) return true;
+    return !!(ctx.protyle?.hint && ctx.protyle?.toolbar);
   }
 
   ensureHintLeadingSpace(protyle, hintKeyword, hintStartIndex = -1) {
@@ -2923,7 +2906,6 @@ class EmojiMarketPlugin extends Plugin {
     }
     if (!(range instanceof Range)) return false;
 
-    this.focusProtyle(protyle);
     protyle.toolbar.range = range;
     this.restoreSelectionRange(range);
 
@@ -2935,11 +2917,10 @@ class EmojiMarketPlugin extends Plugin {
     if (Number.isFinite(lastIndex) && lastIndex >= 0) hint.lastIndex = lastIndex;
 
     this.ensureHintLeadingSpace(protyle, hintKeyword, hint.lastIndex);
-    this.focusProtyle(protyle);
     this.restoreSelectionRange(protyle.toolbar.range);
 
     try {
-      hint.fill(target, protyle, true);
+      hint.fill(target, protyle, false);
       return true;
     } catch {
       return false;
@@ -2947,7 +2928,7 @@ class EmojiMarketPlugin extends Plugin {
   }
 
   async applyImportedSelection(btn, source, icon, unicodePath, selectionCtx = null, hintKeyword = "", isHintMode = false) {
-    if (isHintMode) {
+    if (isHintMode || this.isHintSelectionContext(selectionCtx)) {
       const filled = this.applyHintFill(unicodePath, selectionCtx, hintKeyword);
       if (filled) return true;
     }
