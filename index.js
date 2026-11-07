@@ -193,6 +193,7 @@ class EmojiMarketPlugin extends Plugin {
     this.panelStates = new WeakMap();
     this.searchCache = new Map();
     this.detailCache = new Map();
+    this.iconfontSessionPromise = null;
     this.emojiBase = "";
     this.settingsData = this.defaultSettings();
     this.settingSourceInputs = new Map();
@@ -228,6 +229,7 @@ class EmojiMarketPlugin extends Plugin {
     this.cleanupInjected();
     this.searchCache.clear();
     this.detailCache.clear();
+    this.iconfontSessionPromise = null;
     this.setting = null;
     this.settingSourceInputs.clear();
     this.settingSourceMaxInputs.clear();
@@ -1034,15 +1036,15 @@ class EmojiMarketPlugin extends Plugin {
     const seen = new Set();
     let totalAvailable = Number.POSITIVE_INFINITY;
 
-    for (let page = 1; page <= maxPages && items.length < target; page += 1) {
+    const requestPage = async (page, fromCollection) => {
       const params = new URLSearchParams();
       params.set("q", keyword);
       params.set("page", String(page));
-      params.set("count", String(ICONFONT_PAGE_SIZE));
+      params.set("pageSize", String(ICONFONT_PAGE_SIZE));
       params.set("sortType", "updated_at");
-      params.set("fromCollection", "1");
+      params.set("fromCollection", fromCollection);
 
-      const json = await this.requestJson(
+      const json = await this.requestIconfontJson(
         `${SOURCE_MAP.iconfont.origin}/api/icon/search.json?${params.toString()}`,
         {
           method: "POST",
@@ -1058,6 +1060,19 @@ class EmojiMarketPlugin extends Plugin {
       );
 
       if (Number(json?.code) !== 200) throw new Error(s(json?.message, "iconfont search error"));
+      return json;
+    };
+
+    let fromCollection = "1";
+    let firstPage = await requestPage(1, fromCollection);
+    // Use selected icons only when their total strictly exceeds the requested limit.
+    if (parseIntSafe(firstPage?.data?.count, 0) <= target) {
+      fromCollection = "-1";
+      firstPage = await requestPage(1, fromCollection);
+    }
+
+    for (let page = 1; page <= maxPages && items.length < target; page += 1) {
+      const json = page === 1 ? firstPage : await requestPage(page, fromCollection);
       const totalCount = parseIntSafe(json?.data?.count, 0);
       if (totalCount > 0) totalAvailable = totalCount;
 
@@ -1205,7 +1220,7 @@ class EmojiMarketPlugin extends Plugin {
     const id = n(icon?.id);
     if (!id) throw new Error("iconfont id missing");
 
-    const json = await this.requestJson(
+    const json = await this.requestIconfontJson(
       `${SOURCE_MAP.iconfont.origin}/api/icon/iconInfo.json?id=${encodeURIComponent(id)}`,
       {
         method: "GET",
@@ -3292,6 +3307,53 @@ class EmojiMarketPlugin extends Plugin {
 
   /* 鈹€鈹€ Network requests 鈹€鈹€ */
 
+  async getIconfontSession() {
+    if (!this.iconfontSessionPromise) {
+      this.iconfontSessionPromise = (async () => {
+        let token = "";
+        await this.requestText(`${SOURCE_MAP.iconfont.origin}/`, {
+          headers: {"User-Agent": "Mozilla/5.0"},
+          onResponseHeaders: (headers) => {
+            const pair = Object.entries(headers || {}).find(([key]) => key.toLowerCase() === "set-cookie");
+            const values = pair ? (Array.isArray(pair[1]) ? pair[1] : [pair[1]]) : [];
+            for (const value of values) {
+              const match = String(value).match(/(?:^|,\s*)ctoken=([^;,\s]+)/);
+              if (match) token = match[1];
+            }
+            if (!token) throw new Error("Missing iconfont visitor cookie");
+          },
+        }, SOURCE_MAP.iconfont.origin);
+        return {token, cookie: `ctoken=${token}`};
+      })();
+      // Keep only an in-memory visitor session; failed initialization can be retried.
+      this.iconfontSessionPromise.catch(() => { this.iconfontSessionPromise = null; });
+    }
+    return this.iconfontSessionPromise;
+  }
+
+  async requestIconfontJson(url, options = {}, origin = SOURCE_MAP.iconfont.origin) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const session = await this.getIconfontSession();
+      try {
+        return await this.requestJson(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            Cookie: session.cookie,
+            "x-csrf-token": session.token,
+          },
+        }, origin);
+      } catch (err) {
+        if (attempt || !/\bHTTP 403\b/.test(safeMsg(err))) throw err;
+        // Refresh an expired CSRF token once, sharing initialization across searches.
+        const current = this.iconfontSessionPromise;
+        if (current && (await current) === session && this.iconfontSessionPromise === current) {
+          this.iconfontSessionPromise = null;
+        }
+      }
+    }
+  }
+
   async fetchAvatarDataUrl(url) {
     const errors = [];
 
@@ -3423,10 +3485,13 @@ class EmojiMarketPlugin extends Plugin {
   async requestText(url, options = {}, origin = "") {
     const errors = [];
 
-    try {
-      return await this.requestByFetch(url, options);
-    } catch (err) {
-      errors.push(err);
+    // Browser fetch cannot set Cookie or read Set-Cookie. Use a transport that can.
+    if (!options.onResponseHeaders && !hasHeader(options.headers || {}, "Cookie")) {
+      try {
+        return await this.requestByFetch(url, options);
+      } catch (err) {
+        errors.push(err);
+      }
     }
 
     try {
@@ -3501,6 +3566,7 @@ class EmojiMarketPlugin extends Plugin {
     const status = Number(data?.status ?? data?.StatusCode ?? data?.statusCode ?? 0);
     if (!status) throw new Error("Invalid forwardProxy status");
     if (status >= 400) throw new Error(`HTTP ${status}`);
+    if (options.onResponseHeaders) options.onResponseHeaders(data.headers ?? data.Headers ?? {});
     return data;
   }
 
@@ -3592,6 +3658,12 @@ class EmojiMarketPlugin extends Plugin {
           res.on("end", () => {
             if (status >= 400) {
               reject(new Error(`HTTP ${status}`));
+              return;
+            }
+            try {
+              if (options.onResponseHeaders) options.onResponseHeaders(res.headers);
+            } catch (err) {
+              reject(err);
               return;
             }
             resolve(raw);
